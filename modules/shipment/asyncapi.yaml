@@ -1,0 +1,67 @@
+asyncapi: 3.0.0
+info:
+  title: Shipment Module Messaging
+  version: 0.1.0
+  description: >-
+    Integration messages published and consumed by the Shipment bounded
+    context through RabbitMQ, using the transactional outbox/inbox pattern.
+
+servers:
+  rabbitmq:
+    host: localhost:5672
+    protocol: amqp
+    description: Local RabbitMQ broker
+
+# Channels and operations are declared as the messaging slices are built.
+channels: {}
+operations: {}
+
+components:
+  messages:
+    ShipmentManifestFinalized:
+      name: ShipmentManifestFinalized
+      title: Shipment manifest finalized
+      summary: Published from `shipment.outbox` once the cargo manifest is final.
+      contentType: application/json
+      payload:
+        type: object
+        required: [shipmentId, waybillNumber, commodityCode]
+        properties:
+          shipmentId:
+            type: string
+            format: uuid
+          waybillNumber:
+            type: string
+            pattern: '^MUST-[0-9]{7}$'
+          commodityCode:
+            type: string
+
+    ShipmentDelayedExceptionRaised:
+      name: ShipmentDelayedExceptionRaised
+      title: Shipment operational exception raised
+      summary: Published when an operator flags damage or a delay at port.
+      contentType: application/json
+      payload:
+        type: object
+        required: [shipmentId, reason]
+        properties:
+          shipmentId:
+            type: string
+            format: uuid
+          reason:
+            type: string
+
+    CustomsClearanceApproved:
+      name: CustomsClearanceApproved
+      title: Customs clearance approved
+      summary: Consumed into `shipment.inbox` to release the cargo for transit.
+      contentType: application/json
+      payload:
+        type: object
+        required: [shipmentId, clearanceToken]
+        properties:
+          shipmentId:
+            type: string
+            format: uuid
+          clearanceToken:
+            type: string

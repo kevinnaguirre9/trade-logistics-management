@@ -1,0 +1,5 @@
+"""Shared configuration primitives."""
+
+from modules.shared.config.settings import Settings, get_settings
+
+__all__ = ["Settings", "get_settings"]

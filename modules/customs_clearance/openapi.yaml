@@ -1,0 +1,38 @@
+openapi: 3.1.0
+info:
+  title: Customs Clearance Module API
+  version: 0.1.0
+  description: >-
+    Task-based HTTP API of the Customs Clearance bounded context. Endpoints are named
+    after business tasks (not CRUD) and answer with hypermedia controls
+    pointing at the next allowed task.
+  contact:
+    name: Trade Logistics Management
+servers:
+  - url: http://localhost:8000
+    description: Local development
+
+# Contracts are filled in slice by slice. Planned task-based endpoints:
+#   POST /customs/cases/{caseId}/documents                 -> attach document
+#   POST /customs/cases/{caseId}/documents/{docId}/verify  -> verify document
+#   POST /customs/cases/{caseId}/pay-duty                  -> record duty payment
+paths: {}
+
+components:
+  schemas:
+    ProblemDetails:
+      type: object
+      description: RFC 9457 error representation returned by every endpoint.
+      required: [title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string

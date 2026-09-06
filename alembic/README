@@ -1,0 +1,18 @@
+Alembic environment for the modular monolith.
+
+Revisions are NOT stored here: each module keeps its own history under
+    modules/<module>/src/infrastructure/database/migrations
+
+Create a revision for a module (first revision of a branch also needs
+--branch-label):
+
+    alembic revision --autogenerate -m "create shipments table" \
+        --version-path modules/shipment/src/infrastructure/database/migrations \
+        --branch-label shipment
+
+    alembic revision --autogenerate -m "create clearance cases table" \
+        --version-path modules/customs_clearance/src/infrastructure/database/migrations \
+        --branch-label customs_clearance
+
+Apply everything:      alembic upgrade heads
+Inspect the history:   alembic history --verbose

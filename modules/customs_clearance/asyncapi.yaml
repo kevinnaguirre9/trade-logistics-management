@@ -1,0 +1,90 @@
+asyncapi: 3.0.0
+info:
+  title: Customs Clearance Module Messaging
+  version: 0.1.0
+  description: >-
+    Integration messages published and consumed by the Customs Clearance
+    bounded context through RabbitMQ, using the transactional outbox/inbox
+    pattern.
+
+servers:
+  rabbitmq:
+    host: localhost:5672
+    protocol: amqp
+    description: Local RabbitMQ broker
+
+# Channels and operations are declared as the messaging slices are built.
+channels: {}
+operations: {}
+
+components:
+  messages:
+    ShipmentManifestFinalized:
+      name: ShipmentManifestFinalized
+      title: Shipment manifest finalized
+      summary: Consumed into `customs.inbox` to open a clearance case.
+      contentType: application/json
+      payload:
+        type: object
+        required: [shipmentId, commodityCode]
+        properties:
+          shipmentId:
+            type: string
+            format: uuid
+          commodityCode:
+            type: string
+
+    CustomsDutyAssessed:
+      name: CustomsDutyAssessed
+      title: Customs duty assessed
+      summary: Published from `customs.outbox` when a duty fee becomes payable.
+      contentType: application/json
+      payload:
+        type: object
+        required: [caseId, shipmentId, dutyAmount, currency]
+        properties:
+          caseId:
+            type: string
+            format: uuid
+          shipmentId:
+            type: string
+            format: uuid
+          dutyAmount:
+            type: number
+          currency:
+            type: string
+            minLength: 3
+            maxLength: 3
+
+    CustomsClearanceRejected:
+      name: CustomsClearanceRejected
+      title: Customs clearance rejected
+      summary: Published when the risk assessment rejects the case.
+      contentType: application/json
+      payload:
+        type: object
+        required: [caseId, shipmentId, riskScore]
+        properties:
+          caseId:
+            type: string
+            format: uuid
+          shipmentId:
+            type: string
+            format: uuid
+          riskScore:
+            type: integer
+
+    CustomsClearanceApproved:
+      name: CustomsClearanceApproved
+      title: Customs clearance approved
+      summary: Published once the duty payment is recorded and the case released.
+      contentType: application/json
+      payload:
+        type: object
+        required: [shipmentId, clearanceToken]
+        properties:
+          shipmentId:
+            type: string
+            format: uuid
+          clearanceToken:
+            type: string
