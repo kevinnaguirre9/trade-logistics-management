@@ -48,3 +48,16 @@ async def module_engine(schema: str) -> AsyncIterator[AsyncEngine]:
         yield engine
     finally:
         await engine.dispose()
+
+
+async def bind_module_schema(session: AsyncSession, schema: str) -> None:
+    """Resolve unqualified tables to ``schema`` for this session.
+
+    The request-scoped session of the HTTP API is built from the shared engine,
+    which has no schema translation: without this, an outbox write from a use
+    case would land on an unqualified ``outbox_messages`` and fail. Call it
+    before the first query of the request, so the option is applied when the
+    connection is acquired. Tables that name their schema explicitly, which is
+    every aggregate table, are unaffected.
+    """
+    await session.connection(execution_options={"schema_translate_map": {None: schema}})

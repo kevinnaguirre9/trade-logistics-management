@@ -22,6 +22,9 @@ from modules.shipment.src.api import router as shipment_router
 from modules.shipment.src.infrastructure.database.entities import (
     start_mappers as start_shipment_mappers,
 )
+from modules.shipment.src.infrastructure.message_bus import (
+    register_shipment_message_destinations,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +35,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     start_shipment_mappers()
     start_customs_clearance_mappers()
     start_message_bus_mappers()
+    register_shipment_message_destinations()
     logger.info("Imperative ORM mappings configured")
     yield
     await dispose_engine()

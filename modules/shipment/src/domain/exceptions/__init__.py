@@ -10,6 +10,7 @@ from modules.shipment.src.domain.exceptions.shipment_exceptions import (
     InvalidShipmentIdError,
     InvalidShipmentRouteError,
     InvalidWaybillNumberError,
+    ManifestNotFinalizableError,
     RouteNotModifiableError,
     ShipmentNotFoundError,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "InvalidShipmentIdError",
     "InvalidShipmentRouteError",
     "InvalidWaybillNumberError",
+    "ManifestNotFinalizableError",
     "RouteNotModifiableError",
     "ShipmentNotFoundError",
 ]
