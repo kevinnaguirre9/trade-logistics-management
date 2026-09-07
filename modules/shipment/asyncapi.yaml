@@ -49,15 +49,15 @@ components:
       contentType: application/json
       payload:
         type: object
-        required: [shipmentId, waybillNumber, commodityCode]
+        required: [shipment_id, waybill_number, commodity_code]
         properties:
-          shipmentId:
+          shipment_id:
             type: string
             format: uuid
-          waybillNumber:
+          waybill_number:
             type: string
             pattern: '^MUST-[0-9]{7}$'
-          commodityCode:
+          commodity_code:
             type: string
 
     ShipmentDelayedExceptionRaised:
@@ -67,9 +67,9 @@ components:
       contentType: application/json
       payload:
         type: object
-        required: [shipmentId, reason]
+        required: [shipment_id, reason]
         properties:
-          shipmentId:
+          shipment_id:
             type: string
             format: uuid
           reason:
@@ -82,10 +82,10 @@ components:
       contentType: application/json
       payload:
         type: object
-        required: [shipmentId, clearanceToken]
+        required: [shipment_id, clearance_token]
         properties:
-          shipmentId:
+          shipment_id:
             type: string
             format: uuid
-          clearanceToken:
+          clearance_token:
             type: string

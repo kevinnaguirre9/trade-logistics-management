@@ -58,6 +58,8 @@
 
 ## Naming conventions inside a vertical slice
 
+An HTTP-triggered slice:
+
 ```
 features/create_draft_shipment/
 ├── create_draft_shipment_controller.py   # FastAPI router: HTTP + HATEOAS links
@@ -65,6 +67,19 @@ features/create_draft_shipment/
 └── create_draft_shipment_handler.py      # orchestrates aggregate + repository
 ```
 
+A message-triggered slice replaces the controller with a message handler. It
+plays the same role — turning a delivery into a command — so the rest of the
+slice is identical:
+
+```
+features/open_clearance_case/
+├── open_clearance_case_message_handler.py   # MessageHandler: inbox + command
+├── open_clearance_case_command.py           # Pydantic command DTO
+└── open_clearance_case_handler.py           # orchestrates aggregate + repository
+```
+
+A module's message handlers are collected in `src/message_bus.py`, the
+messaging counterpart of `src/api.py`, and mounted by `worker.py`.
 ## Deviations from the original outline
 
 * `message-bus` and `http/exceptions` are written as `message_bus` — Python
