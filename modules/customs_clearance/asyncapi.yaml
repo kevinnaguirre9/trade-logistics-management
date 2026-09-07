@@ -13,43 +13,79 @@ servers:
     protocol: amqp
     description: Local RabbitMQ broker
 
-# Channels and operations are declared as the messaging slices are built.
-channels: {}
-operations: {}
+channels:
+  shipmentEvents:
+    address: trade-logistics.topic
+    title: Shipment integration events
+    description: >-
+      Topic exchange the Shipment module publishes to. This module binds its
+      queue with `trade-logistics.shipment.#`.
+    messages:
+      ShipmentManifestFinalized:
+        $ref: '#/components/messages/ShipmentManifestFinalized'
+
+  customsEvents:
+    address: trade-logistics.topic
+    title: Customs integration events
+    description: >-
+      The same topic exchange, carrying the messages this module publishes
+      under `trade-logistics.customs.*`.
+    messages:
+      CustomsDutyAssessed:
+        $ref: '#/components/messages/CustomsDutyAssessed'
+      CustomsClearanceRejected:
+        $ref: '#/components/messages/CustomsClearanceRejected'
+      CustomsClearanceApproved:
+        $ref: '#/components/messages/CustomsClearanceApproved'
+
+operations:
+  consumeShipmentManifestFinalized:
+    action: receive
+    channel:
+      $ref: '#/channels/shipmentEvents'
+    title: Consume ShipmentManifestFinalized
+    summary: >-
+      Handled by `OpenClearanceCaseMessageHandler`, which opens a clearance
+      case in `Opened` state. The case and the `customs.inbox_messages` row
+      recording the delivery are written in one transaction, so a redelivery
+      opens no second case. Run with
+      `worker.py handle-messages --module customs_clearance`.
+    messages:
+      - $ref: '#/components/messages/ShipmentManifestFinalized'
 
 components:
   messages:
     ShipmentManifestFinalized:
       name: ShipmentManifestFinalized
       title: Shipment manifest finalized
-      summary: Consumed into `customs.inbox` to open a clearance case.
+      summary: Consumed into `customs.inbox_messages` to open a clearance case.
       contentType: application/json
       payload:
         type: object
-        required: [shipmentId, commodityCode]
+        required: [shipment_id, commodity_code]
         properties:
-          shipmentId:
+          shipment_id:
             type: string
             format: uuid
-          commodityCode:
+          commodity_code:
             type: string
 
     CustomsDutyAssessed:
       name: CustomsDutyAssessed
       title: Customs duty assessed
-      summary: Published from `customs.outbox` when a duty fee becomes payable.
+      summary: Published from `customs.outbox_messages` when a duty becomes payable.
       contentType: application/json
       payload:
         type: object
-        required: [caseId, shipmentId, dutyAmount, currency]
+        required: [case_id, shipment_id, duty_amount, currency]
         properties:
-          caseId:
+          case_id:
             type: string
             format: uuid
-          shipmentId:
+          shipment_id:
             type: string
             format: uuid
-          dutyAmount:
+          duty_amount:
             type: number
           currency:
             type: string
@@ -63,15 +99,15 @@ components:
       contentType: application/json
       payload:
         type: object
-        required: [caseId, shipmentId, riskScore]
+        required: [case_id, shipment_id, risk_score]
         properties:
-          caseId:
+          case_id:
             type: string
             format: uuid
-          shipmentId:
+          shipment_id:
             type: string
             format: uuid
-          riskScore:
+          risk_score:
             type: integer
 
     CustomsClearanceApproved:
@@ -81,10 +117,10 @@ components:
       contentType: application/json
       payload:
         type: object
-        required: [shipmentId, clearanceToken]
+        required: [shipment_id, clearance_token]
         properties:
-          shipmentId:
+          shipment_id:
             type: string
             format: uuid
-          clearanceToken:
+          clearance_token:
             type: string

@@ -9,10 +9,17 @@ import pointing at a bounded context.
         --primary-queue trade-logistics.customs
 """
 
+from modules.customs_clearance.src.infrastructure.database.entities import (
+    start_mappers as start_customs_clearance_mappers,
+)
+from modules.customs_clearance.src.message_bus import build_message_handlers
 from modules.shared.config import get_settings
 from modules.shared.message_bus import start_message_bus_mappers
 from modules.shared.message_bus.cli import ModuleBinding, ModuleRegistry, build_cli
 from modules.shared.message_bus.handlers import MessageHandlerRegistry
+from modules.shipment.src.infrastructure.database.entities import (
+    start_mappers as start_shipment_mappers,
+)
 
 
 def build_module_registry() -> ModuleRegistry:
@@ -24,7 +31,7 @@ def build_module_registry() -> ModuleRegistry:
     settings = get_settings()
 
     shipment_handlers = MessageHandlerRegistry()
-    customs_handlers = MessageHandlerRegistry()
+    customs_handlers = build_message_handlers()
 
     return ModuleRegistry(
         ModuleBinding(
@@ -44,6 +51,8 @@ def build_module_registry() -> ModuleRegistry:
 # when a use case *writes* a message (in the API process), and the relay reads
 # the exchange and routing key back off the row. A module only needs to
 # register here once one of its message handlers schedules a message of its own.
+start_shipment_mappers()
+start_customs_clearance_mappers()
 start_message_bus_mappers()
 cli = build_cli(build_module_registry())
 
