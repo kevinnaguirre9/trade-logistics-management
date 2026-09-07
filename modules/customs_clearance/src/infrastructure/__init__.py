@@ -1,1 +1,1 @@
-"""Infrastructure layer of the Customs Clearance module: database, mappings, adapters."""
+"""Infrastructure layer of the Customs Clearance module: database and adapters."""

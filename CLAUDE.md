@@ -32,7 +32,7 @@ This module handles the physical lifecycle, route constraints, and transport rea
 
 * **Type:** HTTP Controller $\rightarrow$ Command $\rightarrow$ Command Handler.
 * **Task-Based Endpoint:** `POST /shipments`
-* **Payload:** `{ originPortCode: string, destinationPortCode: string }`
+* **Payload:** `{ origin_port_code: string, destination_port_code: string }`
 * **Aggregate Method Invoked:** `const shipment = Shipment.create(id, waybillGenerator.next(), origin, destination)`
 * **Domain Behavior & Invariants:** Initializes the aggregate status to `Draft`. Generates a unique, structured tracking number.
 * **Database Operation:** `repository.persist(shipment)` (Insert into `shipment.shipments`).
@@ -46,7 +46,7 @@ This module handles the physical lifecycle, route constraints, and transport rea
 
 * **Type:** HTTP Controller $\rightarrow$ Command $\rightarrow$ Command Handler.
 * **Task-Based Endpoint:** `PUT /shipments/{id}/route`
-* **Payload:** `{ originPortCode: string, destinationPortCode: string, transitLegs: string[] }`
+* **Payload:** `{ origin_port_code: string, destination_port_code: string, transit_legs: string[] }`
 * **Aggregate Method Invoked:** `shipment.assignRoute(newRoute)`
 * **Domain Behavior & Invariants:** * Cannot modify the route if the status is `AwaitingCustomsRelease`, `InTransit`, or `Delivered`.
 * Validates that the array of `transitLegs` forms a logical sequence starting at the origin and ending at the destination.
@@ -59,7 +59,7 @@ This module handles the physical lifecycle, route constraints, and transport rea
 
 * **Type:** HTTP Controller $\rightarrow$ Command $\rightarrow$ Command Handler.
 * **Task-Based Endpoint:** `POST /shipments/{id}/finalize-manifest`
-* **Payload:** `{ totalWeightKg: number, totalVolumeCbm: number, commodityCode: string }`
+* **Payload:** `{ total_weight_kg: number, total_volume_cbm: number, commodity_code: string }`
 * **Aggregate Method Invoked:** `shipment.finalizeManifest(newManifest)`
 * **Domain Behavior & Invariants:**
 * Can only be finalized if status is `Draft`.
@@ -68,7 +68,7 @@ This module handles the physical lifecycle, route constraints, and transport rea
 
 
 * **Database Operation:** Saves updated shipment **AND** inserts `ShipmentManifestFinalized` integration event into `shipment.outbox` within the same database transaction.
-* **Messages Generated (Outbox):** `ShipmentManifestFinalized` event containing `shipmentId`, `waybillNumber`, and `commodityCode`.
+* **Messages Generated (Outbox):** `ShipmentManifestFinalized` event containing `shipment_id`, `waybill_number`, and `commodity_code`.
 
 #### **Use Case 4: Hold for Customs Inspection**
 
@@ -86,7 +86,7 @@ This module handles the physical lifecycle, route constraints, and transport rea
 
 * **Type:** Message Handler (Inbox) $\rightarrow$ Command $\rightarrow$ Command Handler.
 * **Trigger:** Message Handler consumes `CustomsClearanceApproved` from RabbitMQ $\rightarrow$ stores in `shipment.inbox` $\rightarrow$ handles command.
-* **Payload from Event:** `{ shipmentId: string, clearanceToken: string }`
+* **Payload from Event:** `{ shipment_id: string, clearance_token: string }`
 * **Aggregate Method Invoked:** `shipment.releaseForTransit(clearanceToken)`
 * **Domain Behavior & Invariants:**
 * Can *only* transition to `InTransit` if current status is exactly `AwaitingCustomsRelease`.
@@ -145,7 +145,7 @@ This module operates as a dedicated state machine managing regulatory compliance
 
 * **Type:** Message Handler (Inbox) $\rightarrow$ Command $\rightarrow$ Command Handler.
 * **Trigger:** Consumes `ShipmentManifestFinalized` from RabbitMQ $\rightarrow$ writes to `customs.inbox`.
-* **Payload from Event:** `{ shipmentId: string, commodityCode: string }`
+* **Payload from Event:** `{ shipment_id: string, commodity_code: string }`
 * **Aggregate Method Invoked:** `const clearanceCase = ClearanceCase.openForShipment(id, shipmentId)`
 * **Domain Behavior & Invariants:** Creates the tracking case with an initial status of `Opened`.
 * **Database Operation:** Inserts record into `customs.clearance_cases`. Marks inbox message as completed.
@@ -155,7 +155,7 @@ This module operates as a dedicated state machine managing regulatory compliance
 
 * **Type:** HTTP Controller $\rightarrow$ Command $\rightarrow$ Command Handler.
 * **Task-Based Endpoint:** `POST /customs/cases/{caseId}/documents`
-* **Payload:** `{ documentType: 'COMMERCIAL_INVOICE' | 'BILL_OF_LADING', s3Url: string }`
+* **Payload:** `{ document_type: 'COMMERCIAL_INVOICE' | 'BILL_OF_LADING', s3_url: string }`
 * **Aggregate Method Invoked:** `clearanceCase.attachDocument(documentType, s3Url)`
 * **Domain Behavior & Invariants:**
 * Cannot attach documents if the case status is already `Released` or `Rejected`.
@@ -169,7 +169,7 @@ This module operates as a dedicated state machine managing regulatory compliance
 
 * **Type:** HTTP Controller $\rightarrow$ Command $\rightarrow$ Command Handler (Executed by a Customs Inspector).
 * **Task-Based Endpoint:** `POST /customs/cases/{caseId}/documents/{docId}/verify`
-* **Payload:** `{ inspectorId: string }`
+* **Payload:** `{ inspector_id: string }`
 * **Aggregate Method Invoked:** `clearanceCase.verifyDocument(docId, inspectorId)`
 * **Domain Behavior & Invariants:**
 * Locates the sub-entity item matching `docId`. Flips `isVerified = true` and logs the `inspectorId`.
@@ -196,7 +196,7 @@ This module operates as a dedicated state machine managing regulatory compliance
 
 * **Type:** HTTP Controller $\rightarrow$ Command $\rightarrow$ Command Handler.
 * **Task-Based Endpoint:** `POST /customs/cases/{caseId}/pay-duty`
-* **Payload:** `{ referenceReceiptId: string, paymentAmount: number, currency: string }`
+* **Payload:** `{ reference_receipt_id: string, payment_amount: number, currency: string }`
 * **Aggregate Method Invoked:** `clearanceCase.recordDutyPayment(referenceReceiptId, Money.create(paymentAmount, currency))`
 * **Domain Behavior & Invariants:**
 * Can only pay if state is `DutyPaymentPending`.
@@ -205,7 +205,7 @@ This module operates as a dedicated state machine managing regulatory compliance
 
 
 * **Database Operation:** Updates aggregate root state to `Released`. Inserts integration event to `customs.outbox`.
-* **Messages Generated (Outbox):** Publishes `CustomsClearanceApproved` containing the `shipmentId` and a generated security clearance string token. This is the event consumed by **Use Case 5** of the Shipment Module.
+* **Messages Generated (Outbox):** Publishes `CustomsClearanceApproved` containing the `shipment_id` and a generated security clearance string token. This is the event consumed by **Use Case 5** of the Shipment Module.
 
 ---
 
@@ -217,11 +217,13 @@ This module operates as a dedicated state machine managing regulatory compliance
 * ORM: SQL Alchemy
     * ORM mapping Style: Imperative Mapping
     * __composite_values__  for Value Objects
-* Alembic: creation, management, and invocation of change management scripts for a relational database,
+* Alembic: creation, management, and invocation of change management scripts for a relational database
+    * Alembic use environment variables
 * Message Queue: RabbitMQ
 * Global error handling with Problem Details RFC
 * Pytest for Testing
 * Pydantic Base model for DTOs (e.g. command DTOs of CQRS)
+* HTTP contract naming: request and response bodies use snake_case, identical to the Python field names (no camelCase aliasing)
 * Toml as package manager
 * Dockerfile with best practices (stages and small image size)
 * Docker-compose with app, postgresql database LTS, pgadmin and rabbitmq LTS services
