@@ -69,7 +69,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("message_id", name="uq_outbox_messages_message_id"),
         sa.CheckConstraint(
             f"status IN ({allowed_statuses})",
-            name="ck_outbox_messages_outbox_status",
+            name="outbox_status",
         ),
         schema=SCHEMA,
     )

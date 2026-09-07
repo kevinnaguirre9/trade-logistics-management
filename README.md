@@ -11,12 +11,13 @@ monolith** with two bounded contexts:
 Both modules share only the `modules/shared` kernel and talk to each other
 exclusively through integration events (outbox/inbox over RabbitMQ).
 
-> **Status:** three Shipment slices are implemented — *create draft shipment*
+> **Status:** four slices are implemented. Shipment: *create draft shipment*
 > (`POST /shipments`), *assign complex route*
 > (`PUT /shipments/{shipment_id}/route`) and *finalize cargo manifest*
-> (`POST /shipments/{shipment_id}/finalize-manifest`), the first one to publish
-> an integration event. The shared message bus (outbox, inbox, retries, error
-> queue, both CLI commands) is in place; no module consumes a message yet.
+> (`POST /shipments/{shipment_id}/finalize-manifest`). Customs Clearance:
+> *open clearance case*, driven by the `ShipmentManifestFinalized` message
+> rather than by HTTP. The shared message bus (outbox, inbox, retries, error
+> queue, both CLI commands) carries the event between the two modules.
 
 ## Quick start
 

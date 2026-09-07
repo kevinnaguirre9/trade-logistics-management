@@ -73,11 +73,11 @@ def upgrade() -> None:
         sa.UniqueConstraint("waybill_number", name="uq_shipments_waybill_number"),
         sa.CheckConstraint(
             f"status IN ({allowed_statuses})",
-            name="ck_shipments_tracking_status",
+            name="tracking_status",
         ),
         sa.CheckConstraint(
             "origin_port_code <> destination_port_code",
-            name="ck_shipments_route_endpoints_differ",
+            name="route_endpoints_differ",
         ),
         schema=SCHEMA,
     )
