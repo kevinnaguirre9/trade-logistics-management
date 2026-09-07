@@ -99,6 +99,27 @@ services:
     networks:
       - tlm-network
 
+  # Test runner. Not part of `docker compose up`: it sits behind the "test"
+  # profile and is meant for `docker compose run --rm test`. The suite is
+  # database-free (domain unit tests, plus endpoint tests that override the
+  # handler dependency), so it declares no depends_on.
+  test:
+    build:
+      context: .
+      target: dev
+    profiles: ["test"]
+    working_dir: /app
+    volumes:
+      - ./modules:/app/modules
+      - ./tests:/app/tests
+      - ./conftest.py:/app/conftest.py
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./main.py:/app/main.py
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+    networks:
+      - tlm-network
+
 volumes:
   postgres-data:
   pgadmin-data:

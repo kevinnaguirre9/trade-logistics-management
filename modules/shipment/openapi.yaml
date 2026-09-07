@@ -12,15 +12,106 @@ servers:
   - url: http://localhost:8000
     description: Local development
 
-# Contracts are filled in slice by slice. Planned task-based endpoints:
-#   POST /shipments                        -> create draft shipment
+# Remaining task-based endpoints, added slice by slice:
 #   PUT  /shipments/{id}/route             -> assign complex route
 #   POST /shipments/{id}/finalize-manifest -> finalize cargo manifest
 #   POST /shipments/{id}/flag-exception    -> flag operational exception
-paths: {}
+paths:
+  /shipments:
+    post:
+      operationId: createDraftShipment
+      summary: Create draft shipment
+      description: >-
+        Opens a shipment in `Draft` state and assigns it a unique waybill
+        number drawn from the carrier series. No integration event is
+        published: this is a local setup step.
+      tags: [Shipment]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDraftShipmentCommand'
+      responses:
+        '201':
+          description: The draft shipment was created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateDraftShipmentResponse'
+        '422':
+          description: >-
+            The payload is malformed, or the route violates a domain invariant
+            (for example the origin equals the destination).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 
 components:
   schemas:
+    CreateDraftShipmentCommand:
+      type: object
+      additionalProperties: false
+      required: [origin_port_code, destination_port_code]
+      properties:
+        origin_port_code:
+          type: string
+          description: UN/LOCODE of the port where the cargo is loaded.
+          pattern: '^[A-Z]{2}[A-Z0-9]{3}$'
+          examples: ['ESVLC']
+        destination_port_code:
+          type: string
+          description: UN/LOCODE of the port where the cargo is delivered.
+          pattern: '^[A-Z]{2}[A-Z0-9]{3}$'
+          examples: ['USNYC']
+
+    CreateDraftShipmentResponse:
+      type: object
+      required: [shipment_id, waybill_number, status]
+      properties:
+        shipment_id:
+          type: string
+          format: uuid
+        waybill_number:
+          type: string
+          pattern: '^MUST-[0-9]{7}$'
+        status:
+          $ref: '#/components/schemas/TrackingStatus'
+        _links:
+          type: array
+          description: Tasks that can be performed on the shipment next.
+          items:
+            $ref: '#/components/schemas/Link'
+          examples:
+            - - rel: assign-route
+                href: /shipments/{id}/route
+                method: PUT
+              - rel: finalize-manifest
+                href: /shipments/{id}/finalize-manifest
+                method: POST
+
+    Link:
+      type: object
+      required: [rel, href, method]
+      properties:
+        rel:
+          type: string
+        href:
+          type: string
+        method:
+          type: string
+
+    TrackingStatus:
+      type: string
+      enum:
+        - Draft
+        - ReadyForManifest
+        - AwaitingCustomsRelease
+        - InTransit
+        - Delivered
+        - ExceptionHeld
+
     ProblemDetails:
       type: object
       description: RFC 9457 error representation returned by every endpoint.
