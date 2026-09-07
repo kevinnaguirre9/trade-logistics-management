@@ -1,7 +1,12 @@
 """Shipment aggregate root."""
 
 from modules.shipment.src.domain.enums import TrackingStatus
-from modules.shipment.src.domain.exceptions import RouteNotModifiableError
+from modules.shipment.src.domain.events import ShipmentManifestFinalized
+from modules.shipment.src.domain.exceptions import (
+    InvalidCargoManifestError,
+    ManifestNotFinalizableError,
+    RouteNotModifiableError,
+)
 from modules.shipment.src.domain.value_objects import (
     CargoManifest,
     ShipmentId,
@@ -81,6 +86,41 @@ class Shipment:
             )
 
         self.route = new_route
+
+    def finalize_manifest(self, manifest: CargoManifest) -> ShipmentManifestFinalized:
+        """Declare the cargo and make the shipment ready for customs.
+
+        Only a draft can be finalized: past that point the manifest has already
+        been handed on, so changing it would contradict what customs was told.
+
+        The weight rule is stricter here than in the value object: a manifest
+        may be built with a zero weight, but a shipment cannot be declared
+        ready to travel with nothing on board.
+
+        Returns the event to publish. It is returned rather than recorded on
+        the aggregate because SQLAlchemy does not call ``__init__`` when it
+        loads a row, so a list of pending events would not exist on a shipment
+        read back from the database.
+        """
+        if self.status is not TrackingStatus.DRAFT:
+            raise ManifestNotFinalizableError(
+                f"The manifest of a shipment in '{self.status}' state cannot "
+                "be finalized; only a draft can."
+            )
+
+        if manifest.total_weight_kg <= 0:
+            raise InvalidCargoManifestError(
+                "The total weight must be greater than zero to finalize the manifest."
+            )
+
+        self.manifest = manifest
+        self.status = TrackingStatus.READY_FOR_MANIFEST
+
+        return ShipmentManifestFinalized(
+            shipment_id=str(self.id),
+            waybill_number=str(self.waybill_number),
+            commodity_code=manifest.commodity_code,
+        )
 
     def __repr__(self) -> str:
         """Return a debugging representation of the aggregate."""

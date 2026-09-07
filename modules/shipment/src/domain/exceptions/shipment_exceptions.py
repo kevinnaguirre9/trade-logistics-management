@@ -51,3 +51,10 @@ class RouteNotModifiableError(InvalidStateTransitionError):
 
     error_type = "route-not-modifiable"
     title = "Route Not Modifiable"
+
+
+class ManifestNotFinalizableError(InvalidStateTransitionError):
+    """The shipment is past the point where its manifest can be declared."""
+
+    error_type = "manifest-not-finalizable"
+    title = "Manifest Not Finalizable"

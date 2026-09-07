@@ -12,16 +12,40 @@ servers:
     protocol: amqp
     description: Local RabbitMQ broker
 
-# Channels and operations are declared as the messaging slices are built.
-channels: {}
-operations: {}
+channels:
+  shipmentEvents:
+    address: trade-logistics.topic
+    title: Shipment integration events
+    description: >-
+      Topic exchange every module publishes to. Messages of this module are
+      routed under `trade-logistics.shipment.*`, so a consumer can subscribe to
+      one behaviour or to everything the module emits.
+    messages:
+      ShipmentManifestFinalized:
+        $ref: '#/components/messages/ShipmentManifestFinalized'
+      ShipmentDelayedExceptionRaised:
+        $ref: '#/components/messages/ShipmentDelayedExceptionRaised'
+
+operations:
+  publishShipmentManifestFinalized:
+    action: send
+    channel:
+      $ref: '#/channels/shipmentEvents'
+    title: Publish ShipmentManifestFinalized
+    summary: >-
+      Written to `shipment.outbox_messages` by the *finalize cargo manifest*
+      use case, in the same transaction as the state change, and relayed by
+      `worker.py dispatch-messages --module shipment` with routing key
+      `trade-logistics.shipment.manifest-finalized`.
+    messages:
+      - $ref: '#/components/messages/ShipmentManifestFinalized'
 
 components:
   messages:
     ShipmentManifestFinalized:
       name: ShipmentManifestFinalized
       title: Shipment manifest finalized
-      summary: Published from `shipment.outbox` once the cargo manifest is final.
+      summary: Published from `shipment.outbox_messages` once the cargo is declared.
       contentType: application/json
       payload:
         type: object
@@ -54,7 +78,7 @@ components:
     CustomsClearanceApproved:
       name: CustomsClearanceApproved
       title: Customs clearance approved
-      summary: Consumed into `shipment.inbox` to release the cargo for transit.
+      summary: Consumed into `shipment.inbox_messages` to release the cargo.
       contentType: application/json
       payload:
         type: object
