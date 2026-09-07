@@ -13,7 +13,6 @@ servers:
     description: Local development
 
 # Remaining task-based endpoints, added slice by slice:
-#   POST /shipments/{id}/finalize-manifest -> finalize cargo manifest
 #   POST /shipments/{id}/flag-exception    -> flag operational exception
 paths:
   /shipments:
@@ -98,6 +97,61 @@ paths:
           description: >-
             The payload is malformed, or the route violates a domain invariant
             (equal endpoints, or a port called at twice).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+
+  /shipments/{shipment_id}/finalize-manifest:
+    post:
+      operationId: finalizeManifest
+      summary: Finalize cargo manifest
+      description: >-
+        Declares the cargo of a draft shipment and moves it to
+        `ReadyForManifest`. The total weight must be greater than zero. A
+        `ShipmentManifestFinalized` event is written to
+        `shipment.outbox_messages` in the same transaction as the state change,
+        and published later by the `dispatch-messages` worker.
+      tags: [Shipment]
+      parameters:
+        - name: shipment_id
+          in: path
+          required: true
+          description: Identifier of the shipment to declare.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FinalizeManifestCommand'
+      responses:
+        '200':
+          description: The manifest was finalized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinalizeManifestResponse'
+        '404':
+          description: No shipment matches the identifier.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: The shipment is no longer a draft.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: >-
+            The payload is malformed, or the manifest violates a domain
+            invariant (a weight of zero or less, a negative volume, or a
+            missing commodity code).
           content:
             application/problem+json:
               schema:
@@ -205,6 +259,56 @@ components:
           type: array
           items:
             type: string
+
+    FinalizeManifestCommand:
+      type: object
+      additionalProperties: false
+      required: [total_weight_kg, total_volume_cbm, commodity_code]
+      properties:
+        total_weight_kg:
+          type: number
+          description: Gross weight of the cargo, in kilograms.
+          examples: [12500.5]
+        total_volume_cbm:
+          type: number
+          description: Gross volume of the cargo, in cubic metres.
+          examples: [68.25]
+        commodity_code:
+          type: string
+          maxLength: 16
+          description: Customs classification of the goods (HS code).
+          examples: ['8471']
+
+    FinalizeManifestResponse:
+      type: object
+      required: [shipment_id, waybill_number, status, manifest]
+      properties:
+        shipment_id:
+          type: string
+          format: uuid
+        waybill_number:
+          type: string
+          pattern: '^MUST-[0-9]{7}$'
+        status:
+          $ref: '#/components/schemas/TrackingStatus'
+        manifest:
+          $ref: '#/components/schemas/Manifest'
+        _links:
+          type: array
+          description: Tasks that can be performed on the shipment next.
+          items:
+            $ref: '#/components/schemas/Link'
+
+    Manifest:
+      type: object
+      required: [total_weight_kg, total_volume_cbm, commodity_code]
+      properties:
+        total_weight_kg:
+          type: number
+        total_volume_cbm:
+          type: number
+        commodity_code:
+          type: string
 
     Link:
       type: object

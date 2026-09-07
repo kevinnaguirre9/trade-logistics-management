@@ -40,6 +40,10 @@ def build_module_registry() -> ModuleRegistry:
     )
 
 
+# Destinations are deliberately not registered here: the outbox resolves them
+# when a use case *writes* a message (in the API process), and the relay reads
+# the exchange and routing key back off the row. A module only needs to
+# register here once one of its message handlers schedules a message of its own.
 start_message_bus_mappers()
 cli = build_cli(build_module_registry())
 

@@ -4,11 +4,14 @@ import pytest
 
 from modules.shipment.src.domain.enums import TrackingStatus
 from modules.shipment.src.domain.exceptions import (
+    InvalidCargoManifestError,
     InvalidShipmentRouteError,
+    ManifestNotFinalizableError,
     RouteNotModifiableError,
 )
 from modules.shipment.src.domain.shipment import ROUTE_LOCKED_STATUSES, Shipment
 from modules.shipment.src.domain.value_objects import (
+    CargoManifest,
     ShipmentId,
     ShipmentRoute,
     WaybillNumber,
@@ -107,3 +110,53 @@ class TestAssignRoute:
             )
 
         assert shipment.route is original_route
+
+
+class TestFinalizeManifest:
+    """Behaviour of ``Shipment.finalize_manifest``."""
+
+    def test_declares_the_cargo_and_advances_the_status(self) -> None:
+        shipment = _shipment()
+
+        event = shipment.finalize_manifest(
+            CargoManifest(
+                total_weight_kg=1000.0,
+                total_volume_cbm=12.5,
+                commodity_code="8471",
+            )
+        )
+
+        assert shipment.status is TrackingStatus.READY_FOR_MANIFEST
+        assert shipment.manifest is not None
+        assert shipment.manifest.commodity_code == "8471"
+        assert event.shipment_id == str(shipment.id)
+        assert event.waybill_number == str(shipment.waybill_number)
+        assert event.commodity_code == "8471"
+
+    def test_is_refused_once_the_shipment_is_no_longer_a_draft(self) -> None:
+        shipment = _shipment()
+        shipment.status = TrackingStatus.READY_FOR_MANIFEST
+
+        with pytest.raises(ManifestNotFinalizableError):
+            shipment.finalize_manifest(
+                CargoManifest(
+                    total_weight_kg=1000.0,
+                    total_volume_cbm=12.5,
+                    commodity_code="8471",
+                )
+            )
+
+    def test_refuses_a_shipment_with_no_weight(self) -> None:
+        shipment = _shipment()
+
+        with pytest.raises(InvalidCargoManifestError):
+            shipment.finalize_manifest(
+                CargoManifest(
+                    total_weight_kg=0.0,
+                    total_volume_cbm=12.5,
+                    commodity_code="8471",
+                )
+            )
+
+        assert shipment.status is TrackingStatus.DRAFT
+        assert shipment.manifest is None
