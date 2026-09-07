@@ -18,6 +18,8 @@ dependencies = [
     "alembic>=1.16",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
+    "aio-pika>=9.5",
+    "typer>=0.15",
 ]
 
 [project.optional-dependencies]

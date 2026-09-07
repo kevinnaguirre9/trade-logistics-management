@@ -17,6 +17,7 @@ from modules.customs_clearance.src.infrastructure.database.entities import (
 from modules.shared.config import get_settings
 from modules.shared.database import dispose_engine
 from modules.shared.http.exceptions import register_exception_handlers
+from modules.shared.message_bus import start_message_bus_mappers
 from modules.shipment.src.api import router as shipment_router
 from modules.shipment.src.infrastructure.database.entities import (
     start_mappers as start_shipment_mappers,
@@ -30,6 +31,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Start imperative mappings on boot and release resources on shutdown."""
     start_shipment_mappers()
     start_customs_clearance_mappers()
+    start_message_bus_mappers()
     logger.info("Imperative ORM mappings configured")
     yield
     await dispose_engine()
