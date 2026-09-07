@@ -6,10 +6,10 @@ mounted here, so the module publishes a single router to the application.
 
 from fastapi import APIRouter
 
+from modules.shipment.src.features.create_draft_shipment import (
+    router as create_draft_shipment_router,
+)
+
 router = APIRouter(tags=["Shipment"])
 
-# Feature routers are included as slices are implemented, e.g.:
-# from modules.shipment.src.features.create_draft_shipment import (
-#     create_draft_shipment_controller,
-# )
-# router.include_router(create_draft_shipment_controller.router)
+router.include_router(create_draft_shipment_router)

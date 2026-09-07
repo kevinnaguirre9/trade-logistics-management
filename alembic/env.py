@@ -86,6 +86,9 @@ async def run_async_migrations() -> None:
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
+        # "CREATE SCHEMA" above autobegins a transaction, so Alembic sees an
+        # externally-managed transaction and will not commit on its own.
+        await connection.commit()
 
     await connectable.dispose()
 
