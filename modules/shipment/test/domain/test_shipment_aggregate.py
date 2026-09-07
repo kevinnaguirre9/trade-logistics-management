@@ -3,9 +3,16 @@
 import pytest
 
 from modules.shipment.src.domain.enums import TrackingStatus
-from modules.shipment.src.domain.exceptions import InvalidShipmentRouteError
-from modules.shipment.src.domain.shipment import Shipment
-from modules.shipment.src.domain.value_objects import ShipmentId, WaybillNumber
+from modules.shipment.src.domain.exceptions import (
+    InvalidShipmentRouteError,
+    RouteNotModifiableError,
+)
+from modules.shipment.src.domain.shipment import ROUTE_LOCKED_STATUSES, Shipment
+from modules.shipment.src.domain.value_objects import (
+    ShipmentId,
+    ShipmentRoute,
+    WaybillNumber,
+)
 
 
 def _shipment() -> Shipment:
@@ -45,3 +52,58 @@ class TestCreate:
                 origin_port_code="ESVLC",
                 destination_port_code="ESVLC",
             )
+
+
+class TestAssignRoute:
+    """Behaviour of ``Shipment.assign_route``."""
+
+    def test_replaces_the_route(self) -> None:
+        shipment = _shipment()
+
+        shipment.assign_route(
+            ShipmentRoute(
+                origin_port_code="ESVLC",
+                destination_port_code="USNYC",
+                transit_legs=("MAMIR", "PTLIS"),
+            )
+        )
+
+        assert shipment.route.transit_legs == ("MAMIR", "PTLIS")
+        assert str(shipment.route) == "ESVLC > MAMIR > PTLIS > USNYC"
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            TrackingStatus.DRAFT,
+            TrackingStatus.READY_FOR_MANIFEST,
+            TrackingStatus.EXCEPTION_HELD,
+        ],
+    )
+    def test_is_allowed_before_customs_takes_over(self, status: TrackingStatus) -> None:
+        shipment = _shipment()
+        shipment.status = status
+
+        shipment.assign_route(
+            ShipmentRoute(
+                origin_port_code="ESBCN",
+                destination_port_code="USLAX",
+            )
+        )
+
+        assert shipment.route.origin_port_code == "ESBCN"
+
+    @pytest.mark.parametrize("status", sorted(ROUTE_LOCKED_STATUSES))
+    def test_is_refused_once_the_route_is_settled(self, status: TrackingStatus) -> None:
+        shipment = _shipment()
+        shipment.status = status
+        original_route = shipment.route
+
+        with pytest.raises(RouteNotModifiableError):
+            shipment.assign_route(
+                ShipmentRoute(
+                    origin_port_code="ESBCN",
+                    destination_port_code="USLAX",
+                )
+            )
+
+        assert shipment.route is original_route

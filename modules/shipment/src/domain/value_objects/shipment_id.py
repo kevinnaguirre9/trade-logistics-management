@@ -24,9 +24,7 @@ class ShipmentId:
                 ) from error
             object.__setattr__(self, "value", raw)
         elif not isinstance(raw, UUID):
-            raise InvalidShipmentIdError(
-                "A shipment identifier must be a UUID."
-            )
+            raise InvalidShipmentIdError("A shipment identifier must be a UUID.")
 
     @classmethod
     def generate(cls) -> "ShipmentId":

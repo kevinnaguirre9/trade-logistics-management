@@ -61,9 +61,7 @@ class TestWaybillNumber:
             WaybillNumber(raw)
 
     def test_exposes_its_column_value(self) -> None:
-        assert WaybillNumber("MUST-0000042").__composite_values__() == (
-            "MUST-0000042",
-        )
+        assert WaybillNumber("MUST-0000042").__composite_values__() == ("MUST-0000042",)
 
 
 class TestCargoManifest:
