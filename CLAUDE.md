@@ -241,6 +241,34 @@ This module operates as a dedicated state machine managing regulatory compliance
 - Event-Drive Architecture
 - Task Based HTTP API
 
+## Message Bus
+
+The modules or services from the trade logistic management communicate via Event-Driven architecture.
+They publish and consume messages (either commands or events) from RabbitMQ.
+
+### Requirements
+
+1. Implement a shared module with the following patterns and requirments
+- Transactional Outbox pattern
+- Inbox pattern
+- Idempotency for deduplicating messages
+- Inmediate retries and delayed retries
+- Error queue (aka dead letter queue)
+- CLI commands "dispatch-messages" and "handle-messages"
+- CLI handle-message command must allow dynamic handling connections. In other words, we must be able to tell the configuration
+  (exchange, queue, binding keys, error queue, retries, etc) we want to use.
+- 
+
+### Packages to use
+- aio-pika
+- FastAPI typer (optional if you find no actual benefits from it, let me know what you think first)
+
+### Constraints
+- Each module must have the outbox and inbox tables in their database schema
+- Events or Commands that goes to RabbitMQ are just python classes
+- The events or commands name reflect meaningful domain behavior, not CRUD.
+- Handlers must be transaction, one failing handler doesn't roll back a sibling's completed work.
+
 
 ---
 

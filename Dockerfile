@@ -40,7 +40,7 @@ COPY --from=builder /opt/venv /opt/venv
 
 COPY --chown=app:app modules ./modules
 COPY --chown=app:app alembic ./alembic
-COPY --chown=app:app alembic.ini main.py ./
+COPY --chown=app:app alembic.ini main.py worker.py ./
 
 USER app
 

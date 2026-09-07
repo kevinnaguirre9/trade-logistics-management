@@ -25,6 +25,7 @@ services:
       # Live-reload during development; drop this mount for production images.
       - ./modules:/app/modules
       - ./main.py:/app/main.py
+      - ./worker.py:/app/worker.py
       - ./alembic:/app/alembic
       - ./alembic.ini:/app/alembic.ini
     depends_on:
@@ -115,6 +116,7 @@ services:
       - ./conftest.py:/app/conftest.py
       - ./pyproject.toml:/app/pyproject.toml
       - ./main.py:/app/main.py
+      - ./worker.py:/app/worker.py
       - ./alembic:/app/alembic
       - ./alembic.ini:/app/alembic.ini
     networks:
