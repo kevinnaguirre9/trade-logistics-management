@@ -4,7 +4,11 @@ They extend the shared, framework-agnostic hierarchy, so the HTTP layer turns
 them into RFC 9457 problem documents without any per-slice mapping code.
 """
 
-from modules.shared.domain.errors import InvariantViolationError
+from modules.shared.domain.errors import (
+    EntityNotFoundError,
+    InvalidStateTransitionError,
+    InvariantViolationError,
+)
 
 
 class InvalidShipmentIdError(InvariantViolationError):
@@ -33,3 +37,17 @@ class InvalidShipmentRouteError(InvariantViolationError):
 
     error_type = "invalid-shipment-route"
     title = "Invalid Shipment Route"
+
+
+class ShipmentNotFoundError(EntityNotFoundError):
+    """No shipment matches the requested identifier."""
+
+    error_type = "shipment-not-found"
+    title = "Shipment Not Found"
+
+
+class RouteNotModifiableError(InvalidStateTransitionError):
+    """The shipment has advanced past the point where the route can change."""
+
+    error_type = "route-not-modifiable"
+    title = "Route Not Modifiable"

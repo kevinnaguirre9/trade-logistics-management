@@ -9,46 +9,16 @@ from httpx import AsyncClient
 from modules.shared.http.exceptions.problem_details import PROBLEM_CONTENT_TYPE
 from modules.shipment.src.domain.enums import TrackingStatus
 from modules.shipment.src.domain.exceptions import InvalidShipmentRouteError
-from modules.shipment.src.domain.repositories import ShipmentRepository
-from modules.shipment.src.domain.shipment import Shipment
-from modules.shipment.src.domain.value_objects import ShipmentId, WaybillNumber
-from modules.shipment.src.domain.waybill_number_generator import (
-    WaybillNumberGenerator,
-)
+from modules.shipment.src.domain.value_objects import WaybillNumber
 from modules.shipment.src.features.create_draft_shipment import (
     CreateDraftShipmentCommand,
     CreateDraftShipmentHandler,
     get_create_draft_shipment_handler,
 )
-
-
-class InMemoryShipmentRepository(ShipmentRepository):
-    """Test double keeping the aggregates in a list."""
-
-    def __init__(self) -> None:
-        self.persisted: list[Shipment] = []
-
-    async def persist(self, shipment: Shipment) -> None:
-        if shipment not in self.persisted:
-            self.persisted.append(shipment)
-
-    async def find_by_id(self, shipment_id: ShipmentId) -> Shipment | None:
-        return next(
-            (item for item in self.persisted if item.id == shipment_id),
-            None,
-        )
-
-
-class StubWaybillNumberGenerator(WaybillNumberGenerator):
-    """Test double handing out a predictable waybill series."""
-
-    def __init__(self, first_serial: int = 1) -> None:
-        self._next_serial = first_serial
-
-    async def next(self) -> WaybillNumber:
-        waybill_number = WaybillNumber.from_serial(self._next_serial)
-        self._next_serial += 1
-        return waybill_number
+from modules.shipment.test.doubles import (
+    InMemoryShipmentRepository,
+    StubWaybillNumberGenerator,
+)
 
 
 @pytest.fixture

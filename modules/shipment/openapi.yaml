@@ -13,7 +13,6 @@ servers:
     description: Local development
 
 # Remaining task-based endpoints, added slice by slice:
-#   PUT  /shipments/{id}/route             -> assign complex route
 #   POST /shipments/{id}/finalize-manifest -> finalize cargo manifest
 #   POST /shipments/{id}/flag-exception    -> flag operational exception
 paths:
@@ -43,6 +42,62 @@ paths:
           description: >-
             The payload is malformed, or the route violates a domain invariant
             (for example the origin equals the destination).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+
+  /shipments/{shipment_id}/route:
+    put:
+      operationId: assignRoute
+      summary: Assign complex route
+      description: >-
+        Replaces the itinerary of a shipment. `transit_legs` lists the
+        intermediate calls only, in order; together with the endpoints they
+        must form a logical sequence that never calls at the same port twice.
+        The route is frozen once the shipment awaits customs release, is in
+        transit or has been delivered. No integration event is published.
+      tags: [Shipment]
+      parameters:
+        - name: shipment_id
+          in: path
+          required: true
+          description: Identifier of the shipment to reroute.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignRouteCommand'
+      responses:
+        '200':
+          description: The route was assigned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignRouteResponse'
+        '404':
+          description: No shipment matches the identifier.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: >-
+            The shipment has advanced past the point where the route can be
+            changed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: >-
+            The payload is malformed, or the route violates a domain invariant
+            (equal endpoints, or a port called at twice).
           content:
             application/problem+json:
               schema:
@@ -90,6 +145,66 @@ components:
               - rel: finalize-manifest
                 href: /shipments/{id}/finalize-manifest
                 method: POST
+
+    AssignRouteCommand:
+      type: object
+      additionalProperties: false
+      required: [origin_port_code, destination_port_code]
+      properties:
+        origin_port_code:
+          type: string
+          description: UN/LOCODE of the port where the cargo is loaded.
+          pattern: '^[A-Z]{2}[A-Z0-9]{3}$'
+          examples: ['ESVLC']
+        destination_port_code:
+          type: string
+          description: UN/LOCODE of the port where the cargo is delivered.
+          pattern: '^[A-Z]{2}[A-Z0-9]{3}$'
+          examples: ['USNYC']
+        transit_legs:
+          type: array
+          default: []
+          description: >-
+            Ordered intermediate calls between the origin and the destination.
+            The endpoints are not repeated here.
+          items:
+            type: string
+            pattern: '^[A-Z]{2}[A-Z0-9]{3}$'
+          examples:
+            - ['MAMIR', 'PTLIS']
+
+    AssignRouteResponse:
+      type: object
+      required: [shipment_id, waybill_number, status, route]
+      properties:
+        shipment_id:
+          type: string
+          format: uuid
+        waybill_number:
+          type: string
+          pattern: '^MUST-[0-9]{7}$'
+        status:
+          $ref: '#/components/schemas/TrackingStatus'
+        route:
+          $ref: '#/components/schemas/Route'
+        _links:
+          type: array
+          description: Tasks that can be performed on the shipment next.
+          items:
+            $ref: '#/components/schemas/Link'
+
+    Route:
+      type: object
+      required: [origin_port_code, destination_port_code, transit_legs]
+      properties:
+        origin_port_code:
+          type: string
+        destination_port_code:
+          type: string
+        transit_legs:
+          type: array
+          items:
+            type: string
 
     Link:
       type: object
