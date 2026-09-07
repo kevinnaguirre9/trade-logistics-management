@@ -43,6 +43,11 @@ exclude = ["alembic/versions", "**/migrations"]
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "N", "UP", "B", "SIM", "RUF"]
 
+[tool.ruff.lint.isort]
+# The project ships an ./alembic directory, so Ruff would otherwise take the
+# Alembic package itself for first-party code.
+known-third-party = ["alembic"]
+
 [tool.ruff.lint.pydocstyle]
 convention = "pep257"
 

@@ -1,11 +1,21 @@
 """Shipment aggregate root."""
 
 from modules.shipment.src.domain.enums import TrackingStatus
+from modules.shipment.src.domain.exceptions import RouteNotModifiableError
 from modules.shipment.src.domain.value_objects import (
     CargoManifest,
     ShipmentId,
     ShipmentRoute,
     WaybillNumber,
+)
+
+#: Once customs or the carrier have taken over, the physical route is frozen.
+ROUTE_LOCKED_STATUSES = frozenset(
+    {
+        TrackingStatus.AWAITING_CUSTOMS_RELEASE,
+        TrackingStatus.IN_TRANSIT,
+        TrackingStatus.DELIVERED,
+    }
 )
 
 
@@ -54,6 +64,23 @@ class Shipment:
             ),
             status=TrackingStatus.DRAFT,
         )
+
+    def assign_route(self, new_route: ShipmentRoute) -> None:
+        """Replace the planned route with ``new_route``.
+
+        The route can only be redrawn while the shipment is still under our
+        control: once it is awaiting customs release, in transit or delivered,
+        the physical itinerary is settled. The legs themselves are validated by
+        :class:`~modules.shipment.src.domain.value_objects.ShipmentRoute`, which
+        cannot be constructed with an illogical sequence.
+        """
+        if self.status in ROUTE_LOCKED_STATUSES:
+            raise RouteNotModifiableError(
+                f"The route of a shipment in '{self.status}' state can no "
+                "longer be modified."
+            )
+
+        self.route = new_route
 
     def __repr__(self) -> str:
         """Return a debugging representation of the aggregate."""

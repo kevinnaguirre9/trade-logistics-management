@@ -14,8 +14,14 @@ PORT_CODE_PATTERN = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}$")
 class ShipmentRoute:
     """Origin, destination and the ordered transit legs in between.
 
-    Invariant: the origin cannot be equal to the destination. Checking that the
-    legs form a logical sequence belongs to the *assign route* use case.
+    ``transit_legs`` holds the *intermediate* calls only: the itinerary the
+    route describes is ``origin > leg > ... > leg > destination``.
+
+    Invariants:
+
+    * the origin cannot be equal to the destination;
+    * the itinerary must form a logical sequence, that is, it starts at the
+      origin, ends at the destination and never calls at the same port twice.
     """
 
     origin_port_code: str
@@ -39,13 +45,14 @@ class ShipmentRoute:
         if isinstance(legs, str) or not isinstance(legs, Iterable):
             raise InvalidShipmentRouteError("The transit legs must be a sequence.")
 
+        normalized_legs = tuple(
+            self._validated_port_code(leg, "transit leg") for leg in legs
+        )
+        self._validate_itinerary(origin, destination, normalized_legs)
+
         object.__setattr__(self, "origin_port_code", origin)
         object.__setattr__(self, "destination_port_code", destination)
-        object.__setattr__(
-            self,
-            "transit_legs",
-            tuple(self._validated_port_code(leg, "transit leg") for leg in legs),
-        )
+        object.__setattr__(self, "transit_legs", normalized_legs)
 
     @staticmethod
     def _validated_port_code(value: object, label: str) -> str:
@@ -61,6 +68,28 @@ class ShipmentRoute:
             )
         return normalized
 
+    @staticmethod
+    def _validate_itinerary(
+        origin: str,
+        destination: str,
+        transit_legs: tuple[str, ...],
+    ) -> None:
+        """Ensure the hops form a logical sequence with no port called twice."""
+        visited: set[str] = set()
+        for hop in (origin, *transit_legs, destination):
+            if hop in visited:
+                raise InvalidShipmentRouteError(
+                    f"The route calls at '{hop}' more than once; the transit "
+                    "legs must form a logical sequence from the origin to the "
+                    "destination."
+                )
+            visited.add(hop)
+
+    @property
+    def hops(self) -> tuple[str, ...]:
+        """Return the full itinerary, endpoints included."""
+        return (self.origin_port_code, *self.transit_legs, self.destination_port_code)
+
     def __composite_values__(self) -> tuple[str, str, list[str]]:
         """Return the column values used by the SQLAlchemy composite."""
         return (
@@ -71,9 +100,5 @@ class ShipmentRoute:
 
     def __str__(self) -> str:
         """Return the route as ``ORIGIN > LEG > DESTINATION``."""
-        hops: Sequence[str] = (
-            self.origin_port_code,
-            *self.transit_legs,
-            self.destination_port_code,
-        )
+        hops: Sequence[str] = self.hops
         return " > ".join(hops)

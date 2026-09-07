@@ -11,8 +11,9 @@ monolith** with two bounded contexts:
 Both modules share only the `modules/shared` kernel and talk to each other
 exclusively through integration events (outbox/inbox over RabbitMQ).
 
-> **Status:** the *create draft shipment* slice (`POST /shipments`) is
-> implemented. The remaining use cases and the message bus are not wired yet.
+> **Status:** the *create draft shipment* (`POST /shipments`) and *assign
+> complex route* (`PUT /shipments/{shipment_id}/route`) slices are implemented.
+> The remaining use cases and the message bus are not wired yet.
 
 ## Quick start
 

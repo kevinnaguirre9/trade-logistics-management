@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlalchemy.pool import NullPool
 
 # Importing the entity packages registers every Table on the shared metadata.
-import modules.customs_clearance.src.infrastructure.database.entities  # noqa: F401
+import modules.customs_clearance.src.infrastructure.database.entities
 import modules.shipment.src.infrastructure.database.entities  # noqa: F401
 from modules.customs_clearance.src.infrastructure.database import (
     SCHEMA as CUSTOMS_SCHEMA,
