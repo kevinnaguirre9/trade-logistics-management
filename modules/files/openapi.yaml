@@ -1,0 +1,261 @@
+openapi: 3.1.0
+info:
+  title: Files Module API
+  version: 0.1.0
+  description: >-
+    HTTP API of the Files module: one interface for storing files across
+    several storage classes (local volume, Google Cloud Storage, AWS S3, SFTP).
+    Callers name a disk and get back a `file_uuid`; which backend holds the
+    bytes never leaks into the contract.
+  contact:
+    name: Trade Logistics Management
+servers:
+  - url: http://localhost:8000
+    description: Local development
+
+paths:
+  /files:
+    post:
+      tags: [Files]
+      summary: Upload file
+      operationId: uploadFile
+      description: >-
+        Stores a file on one of the configured disks and records the aggregates
+        it belongs to. The request is `multipart/form-data`, because it carries
+        bytes as well as JSON: `metadata` and `references` are JSON documents
+        sent as their own form parts.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadFileRequest'
+            encoding:
+              metadata:
+                contentType: application/json
+              references:
+                contentType: application/json
+      responses:
+        '201':
+          description: The file was stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadFileResponse'
+        '409':
+          description: Something is already stored at that location on that disk.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '413':
+          description: The upload exceeds `FILES_MAX_UPLOAD_BYTES`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: >-
+            The request violates an invariant: an unconfigured disk, a path
+            that climbs out of the disk, a malformed JSON part, or a reference
+            that does not name its owner.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: The disk is configured but its backend is unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+components:
+  schemas:
+    UploadFileRequest:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+          description: The file being uploaded.
+        disk:
+          type: string
+          maxLength: 32
+          description: >-
+            Storage class to write to. Only disks this deployment configures
+            are selectable; `FILES_DEFAULT_DISK` is used when absent.
+          examples: [local, gcp, aws, sftp]
+        path:
+          type: string
+          maxLength: 512
+          description: >-
+            Directory the file is saved under, relative to the root of the
+            disk. Leading and trailing slashes are normalized away; `..` and
+            `.` segments are refused.
+          examples: [customs/clearance-cases]
+        name:
+          type: string
+          maxLength: 255
+          description: >-
+            Original file name, extension included. Falls back to the file
+            name of the uploaded part. May not contain a path separator.
+          examples: [commercial_invoice.pdf]
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Opaque JSON stored alongside the file.
+          examples:
+            - issued_by: ACME Freight
+              document_type: COMMERCIAL_INVOICE
+        references:
+          type: array
+          description: >-
+            What this file is about, in other bounded contexts. Optional: the
+            client decides whether the file relates to anything at all.
+          items:
+            $ref: '#/components/schemas/FileReferenceInput'
+
+    FileReferenceInput:
+      type: object
+      additionalProperties: false
+      required: [context, entity_type]
+      description: >-
+        One thing the file is about. `context` and `entity_type` say what it
+        relates to and are required; both identifiers are optional, because
+        what a file is about is not always an entity with a key of its own.
+
+
+        There is no `id` here: that is the key of the reference record itself,
+        assigned by the database. Sending one is a `422`.
+      properties:
+        context:
+          type: string
+          maxLength: 128
+          description: Bounded context the file relates to.
+          examples: [customs]
+        entity_type:
+          type: string
+          maxLength: 128
+          description: Kind of thing the file is about.
+          examples: [ClearanceCase]
+        entity_id:
+          oneOf:
+            - type: string
+            - type: integer
+          description: Primary key of that entity, when it has one.
+          examples: [1]
+        uuid:
+          type: string
+          format: uuid
+          description: UUID of that entity, when it has one.
+          examples: [f9502c94-7aff-4290-a269-0443423c0d1e]
+
+    UploadFileResponse:
+      type: object
+      required:
+        [
+          file_uuid,
+          disk,
+          path,
+          name,
+          key,
+          size_bytes,
+          content_type,
+          checksum,
+          metadata,
+          references,
+        ]
+      properties:
+        file_uuid:
+          type: string
+          format: uuid
+          description: >-
+            Identifier of the stored file. This is what the calling context
+            keeps; it never holds the bytes itself.
+        disk:
+          type: string
+          description: Storage class holding the bytes.
+          examples: [local]
+        path:
+          type: string
+          description: Directory the file was saved under, normalized.
+          examples: [customs/clearance-cases]
+        name:
+          type: string
+          examples: [commercial_invoice.pdf]
+        key:
+          type: string
+          description: Object key of the file on its disk.
+          examples: [customs/clearance-cases/commercial_invoice.pdf]
+        size_bytes:
+          type: integer
+          format: int64
+          description: Size of what was actually written, not what was announced.
+          examples: [93]
+        content_type:
+          type: string
+          examples: [application/pdf]
+        checksum:
+          type: string
+          description: Digest of the stored bytes.
+          examples:
+            - sha256:8b0aad2a27db4c2bef7a65e3f86107868e6a31945d252a171674574afffff32a
+        metadata:
+          type: object
+          additionalProperties: true
+        references:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileReferenceView'
+
+    FileReferenceView:
+      type: object
+      required: [id, context, entity_type, entity_id, entity_uuid]
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Key of this reference record, assigned by the database.
+        context:
+          type: string
+          examples: [customs]
+        entity_type:
+          type: string
+          examples: [ClearanceCase]
+        entity_id:
+          type: [string, 'null']
+          examples: ['1']
+        entity_uuid:
+          type: [string, 'null']
+          format: uuid
+
+    ProblemDetails:
+      type: object
+      description: RFC 9457 error representation returned by every endpoint.
+      required: [title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          examples: [https://trade-logistics.local/problems/unknown-storage-disk]
+        title:
+          type: string
+          examples: [Invariant Violation]
+        status:
+          type: integer
+          examples: [422]
+        detail:
+          type: string
+          examples: ["'gcp' is not a configured disk."]
+        instance:
+          type: string
+          examples: [/files]
+        configured_disks:
+          type: array
+          description: >-
+            Extension member listing the selectable disks, sent when the caller
+            names one this deployment has not configured.
+          items:
+            type: string

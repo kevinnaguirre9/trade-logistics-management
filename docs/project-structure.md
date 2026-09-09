@@ -15,7 +15,7 @@
 │   │   ├── domain/                # framework-agnostic error hierarchy
 │   │   ├── http/                  # RFC 9457 problem details + hypermedia helpers
 │   │   │   └── exceptions/
-│   │   └── message_bus/           # placeholder (idempotency, retries) — deferred
+│   │   └── message_bus/           # outbox, inbox, retries, CLI
 │   ├── shipment/
 │   │   ├── asyncapi.yaml          # integration message contracts
 │   │   ├── openapi.yaml           # task-based HTTP contract
@@ -43,9 +43,25 @@
 │   │   └── test/
 │   │       ├── domain/            # aggregate behaviour unit tests
 │   │       └── features/          # use case unit tests
-│   └── customs_clearance/         # same layout; features:
-│       └── src/features/{open_clearance_case, attach_document, verify_document,
-│                         execute_risk_assessment, record_duty_payment}
+│   ├── customs_clearance/         # same layout; features:
+│   │   └── src/features/{open_clearance_case, attach_document, verify_document,
+│   │                     execute_risk_assessment, record_duty_payment}
+│   └── files/                     # same layout, owns the `files` schema
+│       ├── openapi.yaml
+│       ├── src/
+│       │   ├── api.py             # module router: POST /files
+│       │   ├── domain/            # StoredFile aggregate, FileReference entity
+│       │   │   ├── entities/
+│       │   │   ├── exceptions/
+│       │   │   ├── repositories/
+│       │   │   ├── services/      # FileStorage port: the storage abstraction
+│       │   │   └── value_objects/ # FileId, StorageLocation
+│       │   ├── features/upload_file/
+│       │   └── infrastructure/
+│       │       ├── database/{entities,migrations}/
+│       │       ├── repositories/
+│       │       └── storage/       # fsspec adapter + the disk registry
+│       └── test/{domain,features}/
 ├── tests/                         # composition-root (application-wide) tests
 ├── conftest.py                    # shared pytest fixtures (app, ASGI client)
 ├── main.py                        # composition root: settings, mappers, routers, errors
@@ -80,6 +96,20 @@ features/open_clearance_case/
 
 A module's message handlers are collected in `src/message_bus.py`, the
 messaging counterpart of `src/api.py`, and mounted by `worker.py`.
+
+## Why Files is a root module
+
+`files` is used by the other two, but it is not part of the shared kernel. It
+has a schema of its own, an aggregate with real invariants, its own migration
+branch and its own HTTP contract — everything it would need to be lifted out
+and run as a separate service, which is the point. Shared-kernel packages
+(`config`, `database`, `http`, `message_bus`) are libraries the modules link
+against; `files` is a service they call.
+
+So it sits beside `shipment` and `customs_clearance` and keeps their layout,
+`src/` level included. What crosses its boundary is a `file_uuid` and nothing
+else — the same way customs holds a shipment identifier by value — so the day
+it moves out, the callers change their transport and not their model.
 ## Deviations from the original outline
 
 * `message-bus` and `http/exceptions` are written as `message_bus` — Python

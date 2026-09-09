@@ -14,6 +14,10 @@ from modules.customs_clearance.src.api import router as customs_clearance_router
 from modules.customs_clearance.src.infrastructure.database.entities import (
     start_mappers as start_customs_clearance_mappers,
 )
+from modules.files.src.api import router as files_router
+from modules.files.src.infrastructure.database.entities import (
+    start_mappers as start_files_mappers,
+)
 from modules.shared.config import get_settings
 from modules.shared.database import dispose_engine
 from modules.shared.http.exceptions import register_exception_handlers
@@ -34,6 +38,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Start imperative mappings on boot and release resources on shutdown."""
     start_shipment_mappers()
     start_customs_clearance_mappers()
+    start_files_mappers()
     start_message_bus_mappers()
     register_shipment_message_destinations()
     logger.info("Imperative ORM mappings configured")
@@ -57,6 +62,7 @@ def create_app() -> FastAPI:
 
     app.include_router(shipment_router)
     app.include_router(customs_clearance_router)
+    app.include_router(files_router)
 
     @app.get("/health", tags=["Operations"], summary="Liveness probe")
     async def health() -> dict[str, str]:

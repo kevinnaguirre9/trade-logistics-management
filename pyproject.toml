@@ -20,9 +20,18 @@ dependencies = [
     "pydantic-settings>=2.6",
     "aio-pika>=9.5",
     "typer>=0.15",
+    # Files: one filesystem interface over local disks, buckets and SFTP.
+    "fsspec>=2024.10",
+    # Required by FastAPI to parse multipart/form-data uploads.
+    "python-multipart>=0.0.20",
 ]
 
 [project.optional-dependencies]
+# Storage drivers, installed per deployment: an image that only writes to the
+# local disk carries none of them.
+gcp = ["gcsfs>=2024.10"]
+aws = ["s3fs>=2024.10"]
+sftp = ["paramiko>=3.5"]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
@@ -62,6 +71,11 @@ quote-style = "double"
 [tool.pytest.ini_options]
 minversion = "8.0"
 asyncio_mode = "auto"
-testpaths = ["tests", "modules/shipment/test", "modules/customs_clearance/test"]
+testpaths = [
+    "tests",
+    "modules/files/test",
+    "modules/shipment/test",
+    "modules/customs_clearance/test",
+]
 python_files = ["test_*.py", "*_test.py"]
 addopts = "-ra --strict-markers"

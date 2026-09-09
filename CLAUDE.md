@@ -155,13 +155,12 @@ This module operates as a dedicated state machine managing regulatory compliance
 
 * **Type:** HTTP Controller $\rightarrow$ Command $\rightarrow$ Command Handler.
 * **Task-Based Endpoint:** `POST /customs/cases/{caseId}/documents`
-* **Payload:** `{ document_type: 'COMMERCIAL_INVOICE' | 'BILL_OF_LADING', s3_url: string }`
-* **Aggregate Method Invoked:** `clearanceCase.attachDocument(documentType, s3Url)`
+* **Payload:** `{ document_type: 'COMMERCIAL_INVOICE' | 'BILL_OF_LADING', file_uuid: string }`
+* file_uuid: The File uuid coming from Files Service
+* **Aggregate Method Invoked:** `clearanceCase.attachDocument(documentType, file_uuid)`
 * **Domain Behavior & Invariants:**
 * Cannot attach documents if the case status is already `Released` or `Rejected`.
-* Validates that the `s3Url` points to the expected bucket prefix format.
 * If the case was in `Opened` state, transitions to `DocumentVerification` as soon as the first document is attached.
-
 
 * **Database Operation:** Appends to the internal document collection table/schema (`customs.clearance_case_documents`).
 
@@ -207,8 +206,46 @@ This module operates as a dedicated state machine managing regulatory compliance
 * **Database Operation:** Updates aggregate root state to `Released`. Inserts integration event to `customs.outbox`.
 * **Messages Generated (Outbox):** Publishes `CustomsClearanceApproved` containing the `shipment_id` and a generated security clearance string token. This is the event consumed by **Use Case 5** of the Shipment Module.
 
----
 
+## 3. Fully Detailed Bounded Context: Files Service (`files` schema)
+
+Files Service is A shared module in the current project designed to handle files across diverse storage classes (Google Cloud Storage buckets, AWS S3, SFTP, etc) would act as an abstraction layer, providing a unified interface for file operations regardless of the underlying storage system.
+
+### Exhaustive List of Use Cases & Feature Slices
+
+#### **Use Case 1: Upload File**
+
+Request is following:
+
+    {
+        "disk": "local", //could be gcp, aws or any other
+        "path": "some/path", //the path on which the file is going to be saved
+        "name": "original_file_name.extension",
+        "file": //The actual File coming in the request
+        "metadata": {},
+        "references": [
+            {
+                "id": 1,
+                "uuid": "123e4567-e89b-12d3-a456-426614174000",
+                "entity_type": "Foo",
+                "entity_id": 1,
+                "context": "FooService"
+            }
+        ]
+    }
+
+References is the Aggregate the file is related to. For example is we are uploading a document for custom clearance then we have to tell the file is related to entity_type CustomClearance of a given uuid, in the Context of "customs".
+
+### Requirements
+- Implement the shared Files module.
+- Adhere to patterns you already know in this project.
+- Use known packages in the Python and FastAPI ecosystem, but let me know what are the ones you are going to use.
+- If necessary, be aware of asynchrony. Help me here, I don't know if we would need "aio-ish" packages.
+- Add new environment variables needed to interact with Files shared module.
+- For Cloud storage providers service account paths or api keys (if needed) must be configurable in .env.
+
+
+---
 
 # Tech Stack
 * Programming Language: Python

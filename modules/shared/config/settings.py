@@ -38,6 +38,40 @@ class Settings(BaseSettings):
     # Module schemas
     shipment_schema: str = "shipment"
     customs_schema: str = "customs"
+    files_schema: str = "files"
+
+    # -- Files -------------------------------------------------------------
+    # Disk the caller gets when it names none, and the ceiling every upload is
+    # measured against while it streams.
+    files_default_disk: str = "local"
+    files_max_upload_bytes: int = 25 * 1024 * 1024
+
+    # local: a directory in the container, normally a mounted volume.
+    files_local_root: str = "/app/storage"
+
+    # Google Cloud Storage. The bucket is what switches the disk on; the
+    # service account JSON is read from the path given here, so the key file is
+    # mounted rather than baked into the image.
+    files_gcp_bucket: str = ""
+    files_gcp_project: str = ""
+    files_gcp_credentials_path: str = ""
+
+    # AWS S3, or anything that speaks its API (MinIO, Ceph) through the
+    # endpoint URL. Leave the key pair empty to use the standard credential
+    # chain: instance role, ~/.aws, AWS_* variables.
+    files_aws_bucket: str = ""
+    files_aws_region: str = "us-east-1"
+    files_aws_access_key_id: str = ""
+    files_aws_secret_access_key: str = ""
+    files_aws_endpoint_url: str = ""
+
+    # SFTP. Either a password or a private key file, not both.
+    files_sftp_host: str = ""
+    files_sftp_port: int = 22
+    files_sftp_username: str = ""
+    files_sftp_password: str = ""
+    files_sftp_private_key_path: str = ""
+    files_sftp_root: str = ""
 
     # Message broker
     rabbitmq_url: str = "amqp://trade_logistics:change_me@localhost:5672/"
