@@ -11,10 +11,12 @@ from sqlalchemy.pool import NullPool
 
 # Importing the entity packages registers every Table on the shared metadata.
 import modules.customs_clearance.src.infrastructure.database.entities
+import modules.files.src.infrastructure.database.entities
 import modules.shipment.src.infrastructure.database.entities  # noqa: F401
 from modules.customs_clearance.src.infrastructure.database import (
     SCHEMA as CUSTOMS_SCHEMA,
 )
+from modules.files.src.infrastructure.database import SCHEMA as FILES_SCHEMA
 from modules.shared.config import get_settings
 from modules.shared.database import metadata
 from modules.shipment.src.infrastructure.database import SCHEMA as SHIPMENT_SCHEMA
@@ -29,7 +31,7 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 
 target_metadata = metadata
 
-MANAGED_SCHEMAS = (SHIPMENT_SCHEMA, CUSTOMS_SCHEMA)
+MANAGED_SCHEMAS = (SHIPMENT_SCHEMA, CUSTOMS_SCHEMA, FILES_SCHEMA)
 
 
 def include_object(obj, name, type_, reflected, compare_to) -> bool:

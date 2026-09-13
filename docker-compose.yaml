@@ -28,11 +28,34 @@ services:
       - ./worker.py:/app/worker.py
       - ./alembic:/app/alembic
       - ./alembic.ini:/app/alembic.ini
+      # Root of the "local" disk of the Files module.
+      - files-data:/app/storage
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      files-storage-init:
+        condition: service_completed_successfully
+    networks:
+      - tlm-network
+
+  # Hands the "local" disk of the Files module to the non-root user the app
+  # runs as. A fresh named volume is created root-owned, and the image has no
+  # business knowing that, so the fix lives here: the Compose counterpart of a
+  # Kubernetes init container, or of `securityContext.fsGroup` on the pod that
+  # claims the PVC. Runs to completion before the app starts, and is a no-op on
+  # every run after the first.
+  files-storage-init:
+    build:
+      context: .
+      target: runtime
+    container_name: tlm-files-storage-init
+    user: root
+    # chown by name, so it cannot drift from the uid the image assigns.
+    entrypoint: ["sh", "-c", "chown app:app /app/storage"]
+    volumes:
+      - files-data:/app/storage
     networks:
       - tlm-network
 
@@ -126,6 +149,7 @@ volumes:
   postgres-data:
   pgadmin-data:
   rabbitmq-data:
+  files-data:
 
 networks:
   tlm-network:
