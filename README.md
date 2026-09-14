@@ -16,14 +16,17 @@ Modules share only the `modules/shared` kernel and never import one another.
 migrations and its contract, so any of them could be lifted out into a service
 of its own — `files` most readily.
 
-> **Status:** five slices are implemented. Shipment: *create draft shipment*
+> **Status:** six slices are implemented. Shipment: *create draft shipment*
 > (`POST /shipments`), *assign complex route*
 > (`PUT /shipments/{shipment_id}/route`) and *finalize cargo manifest*
 > (`POST /shipments/{shipment_id}/finalize-manifest`). Customs Clearance:
 > *open clearance case*, driven by the `ShipmentManifestFinalized` message
-> rather than by HTTP. Files: *upload file* (`POST /files`). The shared message
-> bus (outbox, inbox, retries, error queue, both CLI commands) carries the
-> event between shipment and customs.
+> rather than by HTTP, and *attach legal document reference*
+> (`POST /customs/cases/{case_id}/documents`). Files: *upload file*
+> (`POST /files`). The shared message bus (outbox, inbox, retries, error queue,
+> both CLI commands) carries the event between shipment and customs; the
+> `file_uuid` returned by Files is how a clearance case points at a document
+> without either module importing the other.
 
 ## Quick start
 

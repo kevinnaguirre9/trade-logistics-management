@@ -8,7 +8,10 @@ into RFC 9457 Problem Details without extra mapping code.
 from modules.customs_clearance.src.domain.exceptions.clearance_exceptions import (
     ClearanceCaseNotFoundError,
     CurrencyMismatchError,
+    DocumentAlreadyAttachedError,
+    DocumentsNotAttachableError,
     InvalidCaseIdError,
+    InvalidDocumentReferenceError,
     InvalidMoneyError,
     InvalidShipmentReferenceError,
 )
@@ -16,7 +19,10 @@ from modules.customs_clearance.src.domain.exceptions.clearance_exceptions import
 __all__ = [
     "ClearanceCaseNotFoundError",
     "CurrencyMismatchError",
+    "DocumentAlreadyAttachedError",
+    "DocumentsNotAttachableError",
     "InvalidCaseIdError",
+    "InvalidDocumentReferenceError",
     "InvalidMoneyError",
     "InvalidShipmentReferenceError",
 ]

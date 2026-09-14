@@ -162,7 +162,7 @@ This module operates as a dedicated state machine managing regulatory compliance
 * Cannot attach documents if the case status is already `Released` or `Rejected`.
 * If the case was in `Opened` state, transitions to `DocumentVerification` as soon as the first document is attached.
 
-* **Database Operation:** Appends to the internal document collection table/schema (`customs.clearance_case_documents`).
+* **Database Operation:** Appends to the internal document collection `ClearanceCase.documents` ({file_uuid: uuid, is_verified: false}).
 
 #### **Use Case 3: Verify Document**
 

@@ -5,10 +5,15 @@ domain objects are attached to them with
 ``mapper_registry.map_imperatively(...)`` inside :func:`start_mappers`.
 """
 
-from sqlalchemy.orm import composite
+from sqlalchemy.orm import composite, relationship
 
 from modules.customs_clearance.src.domain.clearance_case import ClearanceCase
+from modules.customs_clearance.src.domain.entities import DocumentRegistryItem
 from modules.customs_clearance.src.domain.value_objects import CaseId, Money
+from modules.customs_clearance.src.infrastructure.database.entities.clearance_case_document_table import (  # noqa: E501
+    clearance_case_documents_table,
+    document_type_type,
+)
 from modules.customs_clearance.src.infrastructure.database.entities.clearance_case_table import (  # noqa: E501
     assessment_status_type,
     clearance_cases_table,
@@ -34,6 +39,12 @@ def start_mappers() -> None:
     columns = clearance_cases_table.c
 
     mapper_registry.map_imperatively(
+        DocumentRegistryItem,
+        clearance_case_documents_table,
+        exclude_properties=["created_at", "updated_at"],
+    )
+
+    mapper_registry.map_imperatively(
         ClearanceCase,
         clearance_cases_table,
         properties={
@@ -55,6 +66,17 @@ def start_mappers() -> None:
                 columns.duty_amount,
                 columns.duty_currency,
             ),
+            # The documents are part of the aggregate: they cascade with their
+            # root and load eagerly, because a lazy load under asyncio would
+            # raise the moment a caller touched the collection outside the
+            # awaited query.
+            "documents": relationship(
+                DocumentRegistryItem,
+                cascade="all, delete-orphan",
+                lazy="selectin",
+                passive_deletes=True,
+                order_by=clearance_case_documents_table.c.created_at,
+            ),
         },
         exclude_properties=["created_at", "updated_at"],
     )
@@ -64,6 +86,8 @@ def start_mappers() -> None:
 
 __all__ = [
     "assessment_status_type",
+    "clearance_case_documents_table",
     "clearance_cases_table",
+    "document_type_type",
     "start_mappers",
 ]
