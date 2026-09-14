@@ -6,7 +6,9 @@ per-slice mapping code.
 """
 
 from modules.shared.domain.errors import (
+    ConflictError,
     EntityNotFoundError,
+    InvalidStateTransitionError,
     InvariantViolationError,
 )
 
@@ -44,3 +46,24 @@ class ClearanceCaseNotFoundError(EntityNotFoundError):
 
     error_type = "clearance-case-not-found"
     title = "Clearance Case Not Found"
+
+
+class InvalidDocumentReferenceError(InvariantViolationError):
+    """The document type or the file it points at is not usable."""
+
+    error_type = "invalid-document-reference"
+    title = "Invalid Document Reference"
+
+
+class DocumentsNotAttachableError(InvalidStateTransitionError):
+    """The case has been decided, so its paperwork is closed."""
+
+    error_type = "documents-not-attachable"
+    title = "Documents Not Attachable"
+
+
+class DocumentAlreadyAttachedError(ConflictError):
+    """That file is already registered against this case."""
+
+    error_type = "document-already-attached"
+    title = "Document Already Attached"

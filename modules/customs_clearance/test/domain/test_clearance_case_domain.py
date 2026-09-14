@@ -6,10 +6,13 @@ from uuid import UUID, uuid4
 import pytest
 
 from modules.customs_clearance.src.domain.clearance_case import ClearanceCase
-from modules.customs_clearance.src.domain.enums import AssessmentStatus
+from modules.customs_clearance.src.domain.enums import AssessmentStatus, DocumentType
 from modules.customs_clearance.src.domain.exceptions import (
     CurrencyMismatchError,
+    DocumentAlreadyAttachedError,
+    DocumentsNotAttachableError,
     InvalidCaseIdError,
+    InvalidDocumentReferenceError,
     InvalidMoneyError,
     InvalidShipmentReferenceError,
 )
@@ -153,3 +156,124 @@ class TestOpenForShipment:
                 case_id=CaseId.generate(),
                 shipment_id=shipment_id,  # type: ignore[arg-type]
             )
+
+    def test_opens_with_no_paperwork_filed(self) -> None:
+        clearance_case = ClearanceCase.open_for_shipment(
+            case_id=CaseId.generate(), shipment_id="s-1"
+        )
+
+        assert clearance_case.documents == []
+
+
+def a_case(status: AssessmentStatus = AssessmentStatus.OPENED) -> ClearanceCase:
+    """Return a clearance case in the requested state."""
+    clearance_case = ClearanceCase.open_for_shipment(
+        case_id=CaseId.generate(), shipment_id="s-1"
+    )
+    clearance_case.status = status
+    return clearance_case
+
+
+class TestAttachDocument:
+    def test_registers_the_file_under_its_type(self) -> None:
+        clearance_case = a_case()
+        file_uuid = uuid4()
+
+        document = clearance_case.attach_document("COMMERCIAL_INVOICE", file_uuid)
+
+        assert document.document_type is DocumentType.COMMERCIAL_INVOICE
+        assert document.file_uuid == file_uuid
+        assert clearance_case.documents == [document]
+
+    def test_accepts_the_type_as_an_enum_member(self) -> None:
+        document = a_case().attach_document(DocumentType.BILL_OF_LADING, uuid4())
+
+        assert document.document_type is DocumentType.BILL_OF_LADING
+
+    def test_accepts_the_file_reference_in_string_form(self) -> None:
+        file_uuid = uuid4()
+
+        document = a_case().attach_document("BILL_OF_LADING", str(file_uuid))
+
+        assert document.file_uuid == file_uuid
+
+    def test_files_every_document_unverified(self) -> None:
+        document = a_case().attach_document("COMMERCIAL_INVOICE", uuid4())
+
+        assert document.is_verified is False
+        assert document.verified_by_inspector_id is None
+
+    def test_starts_verification_when_the_first_document_arrives(self) -> None:
+        clearance_case = a_case(AssessmentStatus.OPENED)
+
+        clearance_case.attach_document("COMMERCIAL_INVOICE", uuid4())
+
+        assert clearance_case.status is AssessmentStatus.DOCUMENT_VERIFICATION
+
+    def test_leaves_the_status_alone_for_later_documents(self) -> None:
+        clearance_case = a_case(AssessmentStatus.RISK_ASSESSMENT)
+
+        clearance_case.attach_document("COMMERCIAL_INVOICE", uuid4())
+
+        assert clearance_case.status is AssessmentStatus.RISK_ASSESSMENT
+
+    def test_keeps_both_kinds_of_paperwork(self) -> None:
+        clearance_case = a_case()
+
+        clearance_case.attach_document("COMMERCIAL_INVOICE", uuid4())
+        clearance_case.attach_document("BILL_OF_LADING", uuid4())
+
+        assert len(clearance_case.documents) == 2
+
+    def test_finds_a_document_by_its_identifier(self) -> None:
+        clearance_case = a_case()
+        document = clearance_case.attach_document("COMMERCIAL_INVOICE", uuid4())
+
+        assert clearance_case.find_document(document.id) is document
+        assert clearance_case.find_document(uuid4()) is None
+
+    def test_refuses_the_same_file_twice(self) -> None:
+        clearance_case = a_case()
+        file_uuid = uuid4()
+        clearance_case.attach_document("COMMERCIAL_INVOICE", file_uuid)
+
+        with pytest.raises(DocumentAlreadyAttachedError):
+            clearance_case.attach_document("BILL_OF_LADING", file_uuid)
+
+        assert len(clearance_case.documents) == 1
+
+    @pytest.mark.parametrize(
+        "status", [AssessmentStatus.RELEASED, AssessmentStatus.REJECTED]
+    )
+    def test_refuses_to_file_against_a_decided_case(
+        self, status: AssessmentStatus
+    ) -> None:
+        clearance_case = a_case(status)
+
+        with pytest.raises(DocumentsNotAttachableError):
+            clearance_case.attach_document("COMMERCIAL_INVOICE", uuid4())
+
+        assert clearance_case.documents == []
+
+    @pytest.mark.parametrize("document_type", ["PACKING_LIST", "", None, 7])
+    def test_refuses_paperwork_customs_does_not_accept(
+        self, document_type: object
+    ) -> None:
+        with pytest.raises(InvalidDocumentReferenceError):
+            a_case().attach_document(document_type, uuid4())  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize("file_uuid", ["not-a-uuid", "", None, 7])
+    def test_refuses_a_malformed_file_reference(self, file_uuid: object) -> None:
+        with pytest.raises(InvalidDocumentReferenceError):
+            a_case().attach_document(
+                "COMMERCIAL_INVOICE",
+                file_uuid,  # type: ignore[arg-type]
+            )
+
+    def test_knows_which_files_it_already_holds(self) -> None:
+        clearance_case = a_case()
+        file_uuid = uuid4()
+        clearance_case.attach_document("COMMERCIAL_INVOICE", file_uuid)
+
+        assert clearance_case.holds_file(file_uuid)
+        assert not clearance_case.holds_file(uuid4())

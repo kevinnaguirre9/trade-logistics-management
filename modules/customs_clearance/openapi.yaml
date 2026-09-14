@@ -12,14 +12,158 @@ servers:
   - url: http://localhost:8000
     description: Local development
 
-# Contracts are filled in slice by slice. Planned task-based endpoints:
-#   POST /customs/cases/{caseId}/documents                 -> attach document
-#   POST /customs/cases/{caseId}/documents/{docId}/verify  -> verify document
-#   POST /customs/cases/{caseId}/pay-duty                  -> record duty payment
-paths: {}
+# Contracts are filled in slice by slice. Still to come:
+#   POST /customs/cases/{case_id}/documents/{document_id}/verify -> verify document
+#   POST /customs/cases/{case_id}/pay-duty                       -> record duty payment
+paths:
+  /customs/cases/{case_id}/documents:
+    post:
+      tags: [Customs Clearance]
+      summary: Attach legal document reference
+      operationId: attachDocument
+      description: >-
+        Files an uploaded document against a clearance case. `file_uuid` is the
+        identifier returned by `POST /files`; customs stores it by value and
+        never resolves it, so it never learns which storage class holds the
+        bytes. The first document moves a case from `Opened` to
+        `DocumentVerification`.
+      parameters:
+        - name: case_id
+          in: path
+          required: true
+          description: Identifier of the clearance case to file against.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachDocumentRequest'
+      responses:
+        '201':
+          description: The document was filed against the case.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachDocumentResponse'
+        '404':
+          description: No clearance case matches the identifier.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: >-
+            The case has been decided (`Released` or `Rejected`), so its
+            paperwork is closed; or that file is already attached to it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: >-
+            The payload violates an invariant: an unknown document type, a
+            malformed file identifier, or a case identifier that is not a UUID.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 
 components:
   schemas:
+    DocumentType:
+      type: string
+      description: >-
+        The paperwork customs requires. Both kinds must be verified before a
+        case can move on to risk assessment, so the set is closed.
+      enum: [COMMERCIAL_INVOICE, BILL_OF_LADING]
+
+    AttachDocumentRequest:
+      type: object
+      additionalProperties: false
+      required: [document_type, file_uuid]
+      properties:
+        document_type:
+          $ref: '#/components/schemas/DocumentType'
+        file_uuid:
+          type: string
+          format: uuid
+          description: Identifier of the stored file, as returned by `POST /files`.
+          examples: [7c392d07-85d6-473e-b24f-6382c72cc648]
+
+    DocumentView:
+      type: object
+      required:
+        [document_id, document_type, file_uuid, is_verified,
+         verified_by_inspector_id]
+      properties:
+        document_id:
+          type: string
+          format: uuid
+          description: Identifier of the registry entry, used to verify it later.
+        document_type:
+          $ref: '#/components/schemas/DocumentType'
+        file_uuid:
+          type: string
+          format: uuid
+          description: Stored file this entry points at.
+        is_verified:
+          type: boolean
+          description: >-
+            Whether an inspector has cleared it. A freshly filed document is
+            always `false`: clearing it is an inspector's decision.
+        verified_by_inspector_id:
+          type: [string, 'null']
+          description: Inspector who cleared it, once one has.
+
+    AttachDocumentResponse:
+      type: object
+      required:
+        [case_id, shipment_id, status, document, documents_attached, _links]
+      properties:
+        case_id:
+          type: string
+          format: uuid
+        shipment_id:
+          type: string
+          description: >-
+            Shipment the case is tracking, held by value: no foreign key
+            crosses into the shipment schema.
+        status:
+          type: string
+          description: Assessment status of the case after the document was filed.
+          enum:
+            [Opened, DocumentVerification, RiskAssessment, DutyPaymentPending,
+             Released, Rejected]
+        document:
+          $ref: '#/components/schemas/DocumentView'
+        documents_attached:
+          type: integer
+          description: How many documents the case now holds.
+          examples: [1]
+        _links:
+          type: array
+          description: Tasks allowed on the case in its current state.
+          items:
+            $ref: '#/components/schemas/Link'
+
+    Link:
+      type: object
+      required: [rel, href, method]
+      properties:
+        rel:
+          type: string
+          examples: [verify-document]
+        href:
+          type: string
+          examples:
+            - /customs/cases/{case_id}/documents/{document_id}/verify
+        method:
+          type: string
+          examples: [POST]
+
     ProblemDetails:
       type: object
       description: RFC 9457 error representation returned by every endpoint.

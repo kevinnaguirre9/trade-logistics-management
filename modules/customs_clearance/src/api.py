@@ -6,10 +6,10 @@ mounted here, so the module publishes a single router to the application.
 
 from fastapi import APIRouter
 
+from modules.customs_clearance.src.features.attach_document import (
+    attach_document_controller,
+)
+
 router = APIRouter(tags=["Customs Clearance"])
 
-# Feature routers are included as slices are implemented, e.g.:
-# from modules.customs_clearance.src.features.attach_document import (
-#     attach_document_controller,
-# )
-# router.include_router(attach_document_controller.router)
+router.include_router(attach_document_controller.router)
