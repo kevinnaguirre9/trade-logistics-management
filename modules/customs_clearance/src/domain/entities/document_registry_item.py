@@ -4,7 +4,9 @@ from uuid import UUID, uuid4
 
 from modules.customs_clearance.src.domain.enums import DocumentType
 from modules.customs_clearance.src.domain.exceptions import (
+    DocumentAlreadyVerifiedError,
     InvalidDocumentReferenceError,
+    InvalidInspectorError,
 )
 
 #: Longest accepted inspector identifier.
@@ -56,6 +58,38 @@ clearance_case.ClearanceCase` aggregate: it is only ever reached through its
             is_verified=False,
             verified_by_inspector_id=None,
         )
+
+    def verify(self, inspector_id: str) -> None:
+        """Record that an inspector examined this document and cleared it.
+
+        Clearing is not idempotent on purpose: the second attempt is refused
+        rather than silently overwriting the first inspector's name, because
+        who signed off on a document is part of the audit trail.
+        """
+        if self.is_verified:
+            raise DocumentAlreadyVerifiedError(
+                f"Document {self.id} was already cleared by inspector "
+                f"{self.verified_by_inspector_id}."
+            )
+
+        self.verified_by_inspector_id = self._validated_inspector_id(inspector_id)
+        self.is_verified = True
+
+    @staticmethod
+    def _validated_inspector_id(value: object) -> str:
+        """Return the inspector's identifier, or raise."""
+        if not isinstance(value, str):
+            raise InvalidInspectorError("The inspector identifier must be a string.")
+
+        inspector_id = value.strip()
+        if not inspector_id:
+            raise InvalidInspectorError("The inspector identifier is required.")
+        if len(inspector_id) > MAX_INSPECTOR_ID_LENGTH:
+            raise InvalidInspectorError(
+                f"The inspector identifier is longer than "
+                f"{MAX_INSPECTOR_ID_LENGTH} characters."
+            )
+        return inspector_id
 
     @staticmethod
     def _validated_type(value: object) -> DocumentType:

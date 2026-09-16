@@ -67,3 +67,31 @@ class DocumentAlreadyAttachedError(ConflictError):
 
     error_type = "document-already-attached"
     title = "Document Already Attached"
+
+
+class DocumentNotFoundError(EntityNotFoundError):
+    """No document with that identifier is filed against the case."""
+
+    error_type = "document-not-found"
+    title = "Document Not Found"
+
+
+class DocumentNotVerifiableError(InvalidStateTransitionError):
+    """The case has been decided, so its documents can no longer be cleared."""
+
+    error_type = "document-not-verifiable"
+    title = "Document Not Verifiable"
+
+
+class DocumentAlreadyVerifiedError(ConflictError):
+    """An inspector has already cleared that document."""
+
+    error_type = "document-already-verified"
+    title = "Document Already Verified"
+
+
+class InvalidInspectorError(InvariantViolationError):
+    """The inspector clearing the document is not identified."""
+
+    error_type = "invalid-inspector"
+    title = "Invalid Inspector"

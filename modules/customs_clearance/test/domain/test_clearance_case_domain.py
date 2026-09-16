@@ -7,12 +7,17 @@ import pytest
 
 from modules.customs_clearance.src.domain.clearance_case import ClearanceCase
 from modules.customs_clearance.src.domain.enums import AssessmentStatus, DocumentType
+from modules.customs_clearance.src.domain.events import DocumentVerificationCompleted
 from modules.customs_clearance.src.domain.exceptions import (
     CurrencyMismatchError,
     DocumentAlreadyAttachedError,
+    DocumentAlreadyVerifiedError,
+    DocumentNotFoundError,
+    DocumentNotVerifiableError,
     DocumentsNotAttachableError,
     InvalidCaseIdError,
     InvalidDocumentReferenceError,
+    InvalidInspectorError,
     InvalidMoneyError,
     InvalidShipmentReferenceError,
 )
@@ -277,3 +282,120 @@ class TestAttachDocument:
 
         assert clearance_case.holds_file(file_uuid)
         assert not clearance_case.holds_file(uuid4())
+
+
+def a_case_with_both_documents() -> ClearanceCase:
+    """Return a case with one of each required document filed, none cleared."""
+    clearance_case = a_case()
+    clearance_case.attach_document("COMMERCIAL_INVOICE", uuid4())
+    clearance_case.attach_document("BILL_OF_LADING", uuid4())
+    return clearance_case
+
+
+class TestVerifyDocument:
+    def test_records_the_inspector_who_signed_it_off(self) -> None:
+        clearance_case = a_case_with_both_documents()
+        document = clearance_case.documents[0]
+
+        clearance_case.verify_document(document.id, "INSP-4471")
+
+        assert document.is_verified is True
+        assert document.verified_by_inspector_id == "INSP-4471"
+
+    def test_trims_the_inspector_identifier(self) -> None:
+        clearance_case = a_case_with_both_documents()
+        document = clearance_case.documents[0]
+
+        clearance_case.verify_document(document.id, "  INSP-1  ")
+
+        assert document.verified_by_inspector_id == "INSP-1"
+
+    def test_raises_nothing_while_paperwork_is_outstanding(self) -> None:
+        clearance_case = a_case_with_both_documents()
+
+        event = clearance_case.verify_document(
+            clearance_case.documents[0].id, "INSP-4471"
+        )
+
+        assert event is None
+        assert clearance_case.status is AssessmentStatus.DOCUMENT_VERIFICATION
+
+    def test_announces_completion_on_the_last_document(self) -> None:
+        clearance_case = a_case_with_both_documents()
+        clearance_case.verify_document(clearance_case.documents[0].id, "INSP-1")
+
+        event = clearance_case.verify_document(clearance_case.documents[1].id, "INSP-2")
+
+        assert isinstance(event, DocumentVerificationCompleted)
+        assert event.case_id == str(clearance_case.id)
+        assert event.shipment_id == clearance_case.shipment_id
+        assert clearance_case.status is AssessmentStatus.RISK_ASSESSMENT
+
+    def test_needs_one_of_every_required_kind_not_just_two(self) -> None:
+        clearance_case = a_case()
+        clearance_case.attach_document("COMMERCIAL_INVOICE", uuid4())
+        clearance_case.attach_document("COMMERCIAL_INVOICE", uuid4())
+
+        for document in list(clearance_case.documents):
+            event = clearance_case.verify_document(document.id, "INSP-1")
+
+        assert event is None
+        assert clearance_case.status is AssessmentStatus.DOCUMENT_VERIFICATION
+
+    def test_announces_completion_only_once(self) -> None:
+        clearance_case = a_case_with_both_documents()
+        for document in list(clearance_case.documents):
+            clearance_case.verify_document(document.id, "INSP-1")
+
+        extra = clearance_case.attach_document("BILL_OF_LADING", uuid4())
+        event = clearance_case.verify_document(extra.id, "INSP-1")
+
+        assert event is None
+        assert clearance_case.status is AssessmentStatus.RISK_ASSESSMENT
+
+    def test_reports_a_document_the_case_does_not_hold(self) -> None:
+        with pytest.raises(DocumentNotFoundError):
+            a_case_with_both_documents().verify_document(uuid4(), "INSP-1")
+
+    def test_refuses_a_second_sign_off(self) -> None:
+        clearance_case = a_case_with_both_documents()
+        document = clearance_case.documents[0]
+        clearance_case.verify_document(document.id, "INSP-1")
+
+        with pytest.raises(DocumentAlreadyVerifiedError):
+            clearance_case.verify_document(document.id, "INSP-2")
+
+        assert document.verified_by_inspector_id == "INSP-1"
+
+    @pytest.mark.parametrize("inspector_id", ["", "   ", None, 7, "x" * 129])
+    def test_requires_an_identified_inspector(self, inspector_id: object) -> None:
+        clearance_case = a_case_with_both_documents()
+        document = clearance_case.documents[0]
+
+        with pytest.raises(InvalidInspectorError):
+            clearance_case.verify_document(document.id, inspector_id)  # type: ignore[arg-type]
+
+        assert document.is_verified is False
+
+    @pytest.mark.parametrize(
+        "status", [AssessmentStatus.RELEASED, AssessmentStatus.REJECTED]
+    )
+    def test_refuses_to_clear_on_a_decided_case(self, status: AssessmentStatus) -> None:
+        clearance_case = a_case_with_both_documents()
+        document = clearance_case.documents[0]
+        clearance_case.status = status
+
+        with pytest.raises(DocumentNotVerifiableError):
+            clearance_case.verify_document(document.id, "INSP-1")
+
+        assert document.is_verified is False
+
+    def test_knows_when_its_paperwork_is_complete(self) -> None:
+        clearance_case = a_case_with_both_documents()
+
+        assert not clearance_case.has_complete_paperwork()
+
+        for document in list(clearance_case.documents):
+            clearance_case.verify_document(document.id, "INSP-1")
+
+        assert clearance_case.has_complete_paperwork()

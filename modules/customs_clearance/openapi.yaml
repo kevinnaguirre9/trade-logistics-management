@@ -13,8 +13,7 @@ servers:
     description: Local development
 
 # Contracts are filled in slice by slice. Still to come:
-#   POST /customs/cases/{case_id}/documents/{document_id}/verify -> verify document
-#   POST /customs/cases/{case_id}/pay-duty                       -> record duty payment
+#   POST /customs/cases/{case_id}/pay-duty  -> record duty payment
 paths:
   /customs/cases/{case_id}/documents:
     post:
@@ -71,8 +70,141 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
+  /customs/cases/{case_id}/documents/{document_id}/verify:
+    post:
+      tags: [Customs Clearance]
+      summary: Verify document
+      operationId: verifyDocument
+      description: >-
+        Records a customs inspector's sign-off on one filed document. When the
+        sign-off leaves every required kind of document cleared, the case moves
+        to `RiskAssessment` and a `DocumentVerificationCompleted` event is
+        written to `customs.outbox_messages` in the same transaction, to be
+        published by `dispatch-messages`. Clearing is not idempotent: a second
+        sign-off on the same document is refused rather than overwriting the
+        first inspector's name.
+      parameters:
+        - name: case_id
+          in: path
+          required: true
+          description: Identifier of the clearance case.
+          schema:
+            type: string
+            format: uuid
+        - name: document_id
+          in: path
+          required: true
+          description: Identifier of the document to clear.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyDocumentRequest'
+      responses:
+        '200':
+          description: The sign-off was recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyDocumentResponse'
+        '404':
+          description: No such clearance case, or no such document on it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: >-
+            The case has been decided (`Released` or `Rejected`), or an
+            inspector has already cleared that document.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: >-
+            The payload violates an invariant: a missing inspector, or an
+            identifier in the path that is not a UUID.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
 components:
   schemas:
+    VerifyDocumentRequest:
+      type: object
+      additionalProperties: false
+      required: [inspector_id]
+      properties:
+        inspector_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Customs inspector signing the document off.
+          examples: [INSP-4471]
+
+    VerifyDocumentResponse:
+      type: object
+      required:
+        [case_id, shipment_id, status, document, documents_verified,
+         paperwork_complete, _links]
+      properties:
+        case_id:
+          type: string
+          format: uuid
+        shipment_id:
+          type: string
+          description: Shipment the case is tracking, held by value.
+        status:
+          type: string
+          description: >-
+            Assessment status after the sign-off. Becomes `RiskAssessment` on
+            the sign-off that completes the paperwork.
+          enum:
+            [Opened, DocumentVerification, RiskAssessment, DutyPaymentPending,
+             Released, Rejected]
+        document:
+          $ref: '#/components/schemas/VerifiedDocumentView'
+        documents_verified:
+          type: integer
+          description: How many of the case's documents are now cleared.
+          examples: [2]
+        paperwork_complete:
+          type: boolean
+          description: >-
+            Whether every required kind of document is cleared. When this turns
+            true a `DocumentVerificationCompleted` event has been queued.
+        _links:
+          type: array
+          items:
+            $ref: '#/components/schemas/Link'
+
+    VerifiedDocumentView:
+      type: object
+      required:
+        [document_id, document_type, file_uuid, is_verified,
+         verified_by_inspector_id]
+      properties:
+        document_id:
+          type: string
+          format: uuid
+        document_type:
+          $ref: '#/components/schemas/DocumentType'
+        file_uuid:
+          type: string
+          format: uuid
+        is_verified:
+          type: boolean
+          description: Always true once this call succeeds.
+        verified_by_inspector_id:
+          type: string
+          examples: [INSP-4471]
+
     DocumentType:
       type: string
       description: >-

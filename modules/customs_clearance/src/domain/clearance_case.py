@@ -4,12 +4,19 @@ from uuid import UUID
 
 from modules.customs_clearance.src.domain.entities import DocumentRegistryItem
 from modules.customs_clearance.src.domain.enums import AssessmentStatus, DocumentType
+from modules.customs_clearance.src.domain.events import DocumentVerificationCompleted
 from modules.customs_clearance.src.domain.exceptions import (
     DocumentAlreadyAttachedError,
+    DocumentNotFoundError,
+    DocumentNotVerifiableError,
     DocumentsNotAttachableError,
     InvalidShipmentReferenceError,
 )
 from modules.customs_clearance.src.domain.value_objects import CaseId, Money
+
+#: Every kind of paperwork that must be cleared before customs will assess the
+#: risk of a case.
+REQUIRED_DOCUMENT_TYPES = frozenset(DocumentType)
 
 #: Once customs has decided, the paperwork is closed: nothing further can be
 #: filed against the case in either direction.
@@ -97,6 +104,62 @@ class ClearanceCase:
             self.status = AssessmentStatus.DOCUMENT_VERIFICATION
 
         return document
+
+    def verify_document(
+        self,
+        document_id: UUID,
+        inspector_id: str,
+    ) -> DocumentVerificationCompleted | None:
+        """Record an inspector's sign-off, and say whether that completes it.
+
+        Clearing the last outstanding document is what ends the verification
+        stage, so the check lives here rather than in a caller: the documents
+        and the status are the same aggregate, and only this class can change
+        them together.
+
+        Returns the event when the case moved on to ``RiskAssessment``, and
+        ``None`` when there is still paperwork outstanding. The caller writes
+        that event to the outbox in the same transaction as the state change,
+        so the risk assessment is never announced for work that rolled back.
+        """
+        if self.status in DECIDED_STATUSES:
+            raise DocumentNotVerifiableError(
+                f"Case {self.id} is already {self.status}; its documents can no "
+                "longer be cleared."
+            )
+
+        document = self.find_document(document_id)
+        if document is None:
+            raise DocumentNotFoundError(
+                f"No document matches the identifier '{document_id}' on case {self.id}."
+            )
+
+        document.verify(inspector_id)
+
+        # Only a case still in verification can leave it. Guarding on the
+        # source state is also what keeps a third document, cleared after the
+        # case has already moved on, from announcing the same thing twice.
+        if self.status is not AssessmentStatus.DOCUMENT_VERIFICATION:
+            return None
+
+        if not self.has_complete_paperwork():
+            return None
+
+        self.status = AssessmentStatus.RISK_ASSESSMENT
+
+        return DocumentVerificationCompleted(
+            case_id=str(self.id),
+            shipment_id=self.shipment_id,
+        )
+
+    def has_complete_paperwork(self) -> bool:
+        """Return ``True`` when every required kind of document is cleared."""
+        cleared_types = {
+            document.document_type
+            for document in self.documents
+            if document.is_verified
+        }
+        return cleared_types >= REQUIRED_DOCUMENT_TYPES
 
     def holds_file(self, file_uuid: UUID) -> bool:
         """Return ``True`` when that stored file is already on the case."""
