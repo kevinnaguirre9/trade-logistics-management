@@ -14,6 +14,9 @@ from modules.customs_clearance.src.api import router as customs_clearance_router
 from modules.customs_clearance.src.infrastructure.database.entities import (
     start_mappers as start_customs_clearance_mappers,
 )
+from modules.customs_clearance.src.infrastructure.message_bus import (
+    register_customs_message_destinations,
+)
 from modules.files.src.api import router as files_router
 from modules.files.src.infrastructure.database.entities import (
     start_mappers as start_files_mappers,
@@ -41,6 +44,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     start_files_mappers()
     start_message_bus_mappers()
     register_shipment_message_destinations()
+    register_customs_message_destinations()
     logger.info("Imperative ORM mappings configured")
     yield
     await dispose_engine()

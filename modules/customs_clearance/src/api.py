@@ -9,7 +9,11 @@ from fastapi import APIRouter
 from modules.customs_clearance.src.features.attach_document import (
     attach_document_controller,
 )
+from modules.customs_clearance.src.features.verify_document import (
+    verify_document_controller,
+)
 
 router = APIRouter(tags=["Customs Clearance"])
 
 router.include_router(attach_document_controller.router)
+router.include_router(verify_document_controller.router)

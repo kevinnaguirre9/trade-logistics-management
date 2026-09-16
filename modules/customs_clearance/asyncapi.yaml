@@ -31,6 +31,8 @@ channels:
       The same topic exchange, carrying the messages this module publishes
       under `trade-logistics.customs.*`.
     messages:
+      DocumentVerificationCompleted:
+        $ref: '#/components/messages/DocumentVerificationCompleted'
       CustomsDutyAssessed:
         $ref: '#/components/messages/CustomsDutyAssessed'
       CustomsClearanceRejected:
@@ -53,6 +55,22 @@ operations:
     messages:
       - $ref: '#/components/messages/ShipmentManifestFinalized'
 
+  publishDocumentVerificationCompleted:
+    action: send
+    channel:
+      $ref: '#/channels/customsEvents'
+    title: Publish DocumentVerificationCompleted
+    summary: >-
+      Raised by `ClearanceCase.verify_document` when the sign-off leaves every
+      required kind of document cleared. The case moving to `RiskAssessment`
+      and the `customs.outbox_messages` row are written in one transaction, so
+      the risk assessment is never announced for a verification that rolled
+      back. Published by `worker.py dispatch-messages --module
+      customs_clearance` with routing key
+      `trade-logistics.customs.document-verification-completed`.
+    messages:
+      - $ref: '#/components/messages/DocumentVerificationCompleted'
+
 components:
   messages:
     ShipmentManifestFinalized:
@@ -69,6 +87,27 @@ components:
             format: uuid
           commodity_code:
             type: string
+
+    DocumentVerificationCompleted:
+      name: DocumentVerificationCompleted
+      title: Document verification completed
+      summary: >-
+        Published from `customs.outbox_messages` once every required kind of
+        document on a case is cleared. A fact, not an instruction: the risk
+        assessment slice subscribes and decides to act.
+      contentType: application/json
+      payload:
+        type: object
+        required: [case_id, shipment_id]
+        properties:
+          case_id:
+            type: string
+            format: uuid
+            description: The case whose paperwork is now complete.
+          shipment_id:
+            type: string
+            format: uuid
+            description: Shipment the case is tracking, held by value.
 
     CustomsDutyAssessed:
       name: CustomsDutyAssessed

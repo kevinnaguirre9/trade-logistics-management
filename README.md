@@ -21,12 +21,13 @@ of its own — `files` most readily.
 > (`PUT /shipments/{shipment_id}/route`) and *finalize cargo manifest*
 > (`POST /shipments/{shipment_id}/finalize-manifest`). Customs Clearance:
 > *open clearance case*, driven by the `ShipmentManifestFinalized` message
-> rather than by HTTP, and *attach legal document reference*
-> (`POST /customs/cases/{case_id}/documents`). Files: *upload file*
-> (`POST /files`). The shared message bus (outbox, inbox, retries, error queue,
-> both CLI commands) carries the event between shipment and customs; the
-> `file_uuid` returned by Files is how a clearance case points at a document
-> without either module importing the other.
+> rather than by HTTP, *attach legal document reference*
+> (`POST /customs/cases/{case_id}/documents`) and *verify document*
+> (`POST /customs/cases/{case_id}/documents/{document_id}/verify`). Files:
+> *upload file* (`POST /files`). The shared message bus (outbox, inbox,
+> retries, error queue, both CLI commands) carries the events between the
+> modules; the `file_uuid` returned by Files is how a clearance case points at
+> a document without either module importing the other.
 
 ## Quick start
 
