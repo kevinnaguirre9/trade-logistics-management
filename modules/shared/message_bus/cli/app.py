@@ -111,6 +111,40 @@ def build_cli(modules: ModuleRegistry) -> typer.Typer:
             "--retry-queue-message-ttl",
             help="How long a message waits in the retry queue, in milliseconds.",
         ),
+        retry_dead_letter_exchange: str = typer.Option(
+            None,
+            "--retry-queue-dead-letter-exchange",
+            help=(
+                "x-dead-letter-exchange of the retry queue: where an expired "
+                "retry is republished. Defaults to the retry exchange."
+            ),
+        ),
+        retry_dead_letter_routing_key: str = typer.Option(
+            None,
+            "--retry-queue-dead-letter-routing-key",
+            help=(
+                "x-dead-letter-routing-key of the retry queue. Defaults to "
+                "'<primary-queue>.retry', so the retry returns only here."
+            ),
+        ),
+        primary_retry_binding_exchange: str = typer.Option(
+            None,
+            "--primary-queue-retry-binding-exchange",
+            help=(
+                "Exchange of the primary queue's second binding, the one that "
+                "takes its expired retries back. Defaults to the dead-letter "
+                "exchange above."
+            ),
+        ),
+        primary_retry_binding_key: str = typer.Option(
+            None,
+            "--primary-queue-retry-binding-key",
+            help=(
+                "Binding key of that second binding. Defaults to the "
+                "dead-letter routing key above; the two must match for a retry "
+                "to find its way back."
+            ),
+        ),
         immediate_retries: int = typer.Option(
             None,
             "--immediate-retries-number",
@@ -150,6 +184,10 @@ def build_cli(modules: ModuleRegistry) -> typer.Typer:
             retry_exchange=retry_exchange,
             retry_exchange_type=retry_exchange_type,
             retry_message_ttl_ms=retry_message_ttl_ms,
+            retry_dead_letter_exchange=retry_dead_letter_exchange,
+            retry_dead_letter_routing_key=retry_dead_letter_routing_key,
+            primary_retry_binding_exchange=primary_retry_binding_exchange,
+            primary_retry_binding_key=primary_retry_binding_key,
             immediate_retries=immediate_retries,
             delayed_retries=delayed_retries,
             error_queue=error_queue,

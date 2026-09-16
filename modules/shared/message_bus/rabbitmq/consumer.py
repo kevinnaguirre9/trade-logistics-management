@@ -112,8 +112,10 @@ class MessageConsumer:
         redelivery_count = _redelivery_count(headers)
         retry_endpoint = headers.get(RETRY_ENDPOINT_HEADER)
         if redelivery_count > 0 and retry_endpoint != topology.app_name:
-            # A retry belongs to the endpoint that scheduled it: on a fan-out
-            # exchange the other subscribers must not process it a second time.
+            # A retry belongs to the endpoint that scheduled it. Routing alone
+            # now keeps it here - it comes back on a direct binding this queue
+            # owns - so this is the second line of defence, for a deployment
+            # that points two workers at one return key.
             logger.info(
                 "Ignored: retry of message %s belongs to '%s'.",
                 message.message_id,

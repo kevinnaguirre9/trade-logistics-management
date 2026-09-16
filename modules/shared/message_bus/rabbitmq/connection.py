@@ -16,6 +16,7 @@ from aio_pika.abc import (
 
 from modules.shared.message_bus.errors import MessagePublicationError
 from modules.shared.message_bus.messages.envelope import (
+    ENDPOINT_HEADER,
     EXCEPTION_DETAILS_HEADER,
     REDELIVERY_COUNT_HEADER,
     RETRY_ENDPOINT_HEADER,
@@ -111,8 +112,14 @@ class BrokerConnection:
         """Declare the primary, retry and error topology, and return the queue.
 
         The retry queue holds nothing permanently: messages sit there for
-        ``retry_message_ttl_ms`` and are then dead-lettered *back* to the
-        primary exchange, which is what turns a TTL into a delayed retry.
+        ``retry_message_ttl_ms`` and are then dead-lettered back to the primary
+        queue, which is what turns a TTL into a delayed retry.
+
+        They come back through a direct exchange under a key naming the queue
+        they failed on, and the primary queue carries a second binding for that
+        key. Returning them to the primary *topic* exchange instead would hand
+        the retry to every queue bound to that pattern, so a sibling module
+        would be woken by work it never attempted.
         """
         topology = self._topology
 
@@ -125,24 +132,42 @@ class BrokerConnection:
         error_exchange = await self.declare_exchange(
             topology.error_exchange, topology.error_exchange_type
         )
+        # Usually the retry exchange itself, in which case this is a cache hit
+        # and the type argument is ignored.
+        retry_return_exchange = await self.declare_exchange(
+            topology.resolved_primary_retry_binding_exchange,
+            topology.retry_exchange_type,
+        )
+        await self.declare_exchange(
+            topology.resolved_retry_dead_letter_exchange,
+            topology.retry_exchange_type,
+        )
 
         primary_queue = await self.channel.declare_queue(
             topology.primary_queue, durable=True
         )
         await primary_queue.bind(primary_exchange, topology.primary_binding_key)
+        # Second binding: the way back in for this queue's own expired retries.
+        await primary_queue.bind(
+            retry_return_exchange,
+            topology.resolved_primary_retry_binding_key,
+        )
 
         retry_queue = await self.channel.declare_queue(
             topology.retry_queue,
             durable=True,
             arguments={
                 "x-message-ttl": topology.retry_message_ttl_ms,
-                "x-dead-letter-exchange": topology.primary_exchange,
-                # Messages sitting here carry the *retry* routing key, so the
-                # trip back needs the primary binding key explicitly: without
-                # it they would return with a key nothing binds to and be
-                # dropped. A consumer ignores retries scheduled by another
-                # endpoint, so this cannot cross-feed a sibling module.
-                "x-dead-letter-routing-key": topology.primary_binding_key,
+                # Messages sitting here carry the retry queue's own routing
+                # key, so the trip back needs its key stated explicitly:
+                # without it they would return under a key nothing binds to and
+                # be dropped.
+                "x-dead-letter-exchange": (
+                    topology.resolved_retry_dead_letter_exchange
+                ),
+                "x-dead-letter-routing-key": (
+                    topology.resolved_retry_dead_letter_routing_key
+                ),
             },
         )
         await retry_queue.bind(retry_exchange, topology.retry_binding_key)
@@ -222,10 +247,16 @@ class BrokerConnection:
         message: aio_pika.abc.AbstractIncomingMessage,
         error: Exception,
     ) -> None:
-        """Move the message to the error queue with the failure attached."""
+        """Move the message to the error queue with the failure attached.
+
+        Two headers go with it: what went wrong, and enough about where it was
+        going to put it back. The message keeps its own body, id and type, so a
+        replay is a republish rather than a reconstruction.
+        """
         topology = self._topology
         headers = dict(message.headers or {})
-        headers[EXCEPTION_DETAILS_HEADER] = _exception_details(error, topology.app_name)
+        headers[EXCEPTION_DETAILS_HEADER] = _exception_details(error)
+        headers[ENDPOINT_HEADER] = _endpoint_descriptor(topology, message.type)
 
         logger.error(
             "Dead-lettering message %s after %s delayed retries: %s",
@@ -258,15 +289,44 @@ def _redelivery_count(headers: dict[str, Any]) -> int:
         return 0
 
 
-def _exception_details(error: Exception, app_name: str) -> list[dict[str, Any]]:
-    """Describe the failure, flattening an aggregate of handler errors."""
+def _exception_details(error: Exception) -> list[dict[str, Any]]:
+    """Describe the failure, flattening an aggregate of handler errors.
+
+    Only what went wrong. Who it went wrong for is in the ``endpoint`` header,
+    which names it once for the whole message rather than once per failure.
+    """
     causes = getattr(error, "failures", None) or [error]
     return [
         {
             "exception_type": type(cause).__name__,
             "message": str(cause),
-            "endpoint": app_name,
             "failed_at": datetime.now(UTC).isoformat(),
         }
         for cause in causes
     ]
+
+
+def _endpoint_descriptor(
+    topology: BrokerTopology,
+    message_type: str | None,
+) -> dict[str, Any]:
+    """Describe who failed the message and how to deliver it again.
+
+    The name is the app name, the same value the retry path already records in
+    its ``retry_endpoint`` header, so one message never names its endpoint two
+    different ways.
+
+    The exchange and routing key are deliberately the retry queue's own
+    dead-letter pair rather than the exchange the message first arrived on.
+    That pair is the way *into this consumer's queue*: a replay service reading
+    the error queue can republish to it and the message lands back where it
+    failed, not fanned out to every subscriber of the original topic.
+    """
+    return {
+        "name": topology.app_name,
+        "delivery_metadata": {
+            "message_type": message_type or "",
+            "exchange": topology.resolved_retry_dead_letter_exchange,
+            "routing_key": topology.resolved_retry_dead_letter_routing_key,
+        },
+    }

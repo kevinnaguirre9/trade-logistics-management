@@ -14,6 +14,19 @@ RETRY_ENDPOINT_HEADER = "retry_endpoint"
 #: Header carrying the failure details attached when a message is dead-lettered.
 EXCEPTION_DETAILS_HEADER = "exception_details"
 
+#: Header attached when a message is dead-lettered, describing who failed it and
+#: how to put it back. Shaped as::
+#:
+#:     {"name": "<bounded context>",
+#:      "delivery_metadata": {"message_type": "...",
+#:                            "exchange": "...",
+#:                            "routing_key": "..."}}
+#:
+#: The exchange and routing key are the retry queue's own dead-letter pair, so
+#: republishing the message to them returns it to the queue that failed it -
+#: which is what lets something reading the error queue replay it later.
+ENDPOINT_HEADER = "endpoint"
+
 
 @dataclass(frozen=True, slots=True)
 class MessageEnvelope:
