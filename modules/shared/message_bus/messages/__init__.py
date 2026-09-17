@@ -6,6 +6,7 @@ from modules.shared.message_bus.messages.destinations import (
     message_destinations,
 )
 from modules.shared.message_bus.messages.envelope import (
+    ENDPOINT_HEADER,
     EXCEPTION_DETAILS_HEADER,
     REDELIVERY_COUNT_HEADER,
     RETRY_ENDPOINT_HEADER,
@@ -14,6 +15,7 @@ from modules.shared.message_bus.messages.envelope import (
 from modules.shared.message_bus.messages.message import IntegrationMessage
 
 __all__ = [
+    "ENDPOINT_HEADER",
     "EXCEPTION_DETAILS_HEADER",
     "REDELIVERY_COUNT_HEADER",
     "RETRY_ENDPOINT_HEADER",

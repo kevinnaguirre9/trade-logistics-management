@@ -84,14 +84,26 @@ class Settings(BaseSettings):
     rabbitmq_primary_queue: str = "trade-logistics.default"
     rabbitmq_primary_binding_key: str = "trade-logistics.#"
 
-    rabbitmq_retry_exchange: str = "trade-logistics.retry"
-    rabbitmq_retry_exchange_type: str = "topic"
-    rabbitmq_retry_queue: str = "trade-logistics.default.retry"
-    rabbitmq_retry_binding_key: str = "trade-logistics.default.retry"
+    # Direct, not topic: both hops of the retry path address exactly one queue,
+    # which is why the exchange is named for its type rather than for retries.
+    rabbitmq_retry_exchange: str = "trade-logistics.direct"
+    rabbitmq_retry_exchange_type: str = "direct"
+    rabbitmq_retry_queue: str = "trade-logistics.default.delayed-retry"
+    rabbitmq_retry_binding_key: str = "trade-logistics.default.delayed-retry"
     rabbitmq_retry_message_ttl_ms: int = 10_000
 
-    rabbitmq_error_exchange: str = "trade-logistics.error"
-    rabbitmq_error_exchange_type: str = "topic"
+    # The way back in for an expired retry. Left empty they are derived from
+    # the primary queue, so each worker reclaims its own retries and no others.
+    rabbitmq_retry_dead_letter_exchange: str = ""
+    rabbitmq_retry_dead_letter_routing_key: str = ""
+    rabbitmq_primary_retry_binding_exchange: str = ""
+    rabbitmq_primary_retry_binding_key: str = ""
+
+    # Also direct, and the same exchange: a message that has exhausted its
+    # retries is parked in exactly one error queue, so there is nothing for a
+    # topic exchange to fan out to.
+    rabbitmq_error_exchange: str = "trade-logistics.direct"
+    rabbitmq_error_exchange_type: str = "direct"
     rabbitmq_error_queue: str = "trade-logistics.error"
     rabbitmq_error_routing_key: str = "trade-logistics.dead-letter"
 

@@ -2,7 +2,7 @@
 
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 from uuid import UUID, uuid4
 
 import pytest
@@ -27,6 +27,10 @@ from modules.shared.message_bus.outbox.outbox_message import (
     OutboxStatus,
 )
 from modules.shared.message_bus.rabbitmq.config import BrokerTopology
+from modules.shared.message_bus.rabbitmq.connection import (
+    _endpoint_descriptor,
+    _exception_details,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -370,6 +374,220 @@ class TestBrokerTopology:
         )
 
         assert topology.retry_delay_seconds == 2.5
+
+
+class TestRetryReturnPath:
+    """An expired retry must come back to the queue it failed on, and no other."""
+
+    def a_topology(self, **overrides: object) -> BrokerTopology:
+        settings: dict[str, object] = {
+            "primary_queue": "trade-logistics.customs",
+            "primary_binding_key": "trade-logistics.shipment.#",
+        }
+        settings.update(overrides)
+        return BrokerTopology.from_settings().overridden_with(**settings)
+
+    def test_returns_retries_through_the_direct_exchange(self) -> None:
+        topology = self.a_topology()
+
+        # Named for its type, because it carries both hops of the retry path
+        # and each of them addresses exactly one queue.
+        assert topology.retry_exchange == "trade-logistics.direct"
+        assert topology.retry_exchange_type == "direct"
+
+    def test_parks_poison_messages_through_the_same_direct_exchange(self) -> None:
+        topology = self.a_topology()
+
+        # A message that has exhausted its retries has exactly one
+        # destination, so it needs no topic exchange either.
+        assert topology.error_exchange == topology.retry_exchange
+        assert topology.error_exchange_type == "direct"
+
+    def test_keeps_only_the_integration_events_on_a_topic_exchange(self) -> None:
+        topology = self.a_topology()
+
+        # One exchange fans out by pattern, one addresses a single queue.
+        assert topology.primary_exchange_type == "topic"
+        assert topology.primary_exchange != topology.retry_exchange
+        assert len({topology.primary_exchange, topology.retry_exchange}) == 2
+
+    def test_derives_the_return_key_from_the_queue_not_its_binding(self) -> None:
+        topology = self.a_topology()
+
+        # The binding key is a pattern several queues may share; the queue name
+        # is what identifies this consumer.
+        assert (
+            topology.resolved_retry_dead_letter_routing_key
+            == "trade-logistics.customs.retry"
+        )
+
+    def test_dead_letters_through_the_retry_exchange_by_default(self) -> None:
+        topology = self.a_topology()
+
+        assert topology.resolved_retry_dead_letter_exchange == topology.retry_exchange
+
+    def test_binds_the_primary_queue_to_the_same_place_it_dead_letters_to(
+        self,
+    ) -> None:
+        topology = self.a_topology()
+
+        # The two halves of the return path only meet if these match.
+        assert (
+            topology.resolved_primary_retry_binding_exchange
+            == topology.resolved_retry_dead_letter_exchange
+        )
+        assert (
+            topology.resolved_primary_retry_binding_key
+            == topology.resolved_retry_dead_letter_routing_key
+        )
+
+    def test_gives_two_workers_different_return_keys(self) -> None:
+        customs = self.a_topology()
+        shipment = self.a_topology(primary_queue="trade-logistics.shipment")
+
+        assert (
+            customs.resolved_primary_retry_binding_key
+            != shipment.resolved_primary_retry_binding_key
+        )
+
+    def test_takes_an_explicit_dead_letter_exchange(self) -> None:
+        topology = self.a_topology(retry_dead_letter_exchange="trade-logistics.return")
+
+        assert topology.resolved_retry_dead_letter_exchange == "trade-logistics.return"
+        # The primary binding follows it unless told otherwise.
+        assert (
+            topology.resolved_primary_retry_binding_exchange == "trade-logistics.return"
+        )
+
+    def test_takes_an_explicit_dead_letter_routing_key(self) -> None:
+        topology = self.a_topology(
+            retry_dead_letter_routing_key="customs.back-in-the-queue"
+        )
+
+        assert (
+            topology.resolved_retry_dead_letter_routing_key
+            == "customs.back-in-the-queue"
+        )
+        assert (
+            topology.resolved_primary_retry_binding_key == "customs.back-in-the-queue"
+        )
+
+    def test_takes_a_second_binding_that_differs_from_the_dead_letter_target(
+        self,
+    ) -> None:
+        topology = self.a_topology(
+            retry_dead_letter_exchange="trade-logistics.return",
+            retry_dead_letter_routing_key="customs.back",
+            primary_retry_binding_exchange="trade-logistics.other",
+            primary_retry_binding_key="customs.elsewhere",
+        )
+
+        assert (
+            topology.resolved_primary_retry_binding_exchange == "trade-logistics.other"
+        )
+        assert topology.resolved_primary_retry_binding_key == "customs.elsewhere"
+
+    def test_never_returns_a_retry_through_the_primary_exchange(self) -> None:
+        topology = self.a_topology()
+
+        assert topology.resolved_retry_dead_letter_exchange != topology.primary_exchange
+        assert (
+            topology.resolved_retry_dead_letter_routing_key
+            != topology.primary_binding_key
+        )
+
+
+class TestDeadLetteredEndpoint:
+    """What the error queue is told, so a replay service can act on it."""
+
+    def a_topology(self, **overrides: object) -> BrokerTopology:
+        settings: dict[str, object] = {
+            "primary_queue": "trade-logistics.customs",
+            "primary_binding_key": "trade-logistics.shipment.#",
+            "app_name": "customs-worker",
+        }
+        settings.update(overrides)
+        return BrokerTopology.from_settings().overridden_with(**settings)
+
+    def test_names_the_endpoint_that_failed_the_message(self) -> None:
+        descriptor = _endpoint_descriptor(
+            self.a_topology(), "DocumentVerificationCompleted"
+        )
+
+        assert descriptor["name"] == "customs-worker"
+
+    def test_names_the_endpoint_once_for_the_whole_message(self) -> None:
+        topology = self.a_topology()
+
+        descriptor = _endpoint_descriptor(topology, "X")
+        details = _exception_details(RuntimeError("boom"))
+
+        # The endpoint header names it, for the message; the failures only say
+        # what went wrong. `retry_endpoint` carries app_name too, so one
+        # message never names its endpoint two different ways.
+        assert descriptor["name"] == topology.app_name
+        assert "endpoint" not in details[0]
+
+    def test_carries_the_delivery_metadata_a_replay_needs(self) -> None:
+        descriptor = _endpoint_descriptor(
+            self.a_topology(), "DocumentVerificationCompleted"
+        )
+
+        assert descriptor["delivery_metadata"] == {
+            "message_type": "DocumentVerificationCompleted",
+            "exchange": "trade-logistics.direct",
+            "routing_key": "trade-logistics.customs.retry",
+        }
+
+    def test_routes_a_replay_back_through_the_retry_queues_own_pair(self) -> None:
+        topology = self.a_topology()
+
+        metadata = _endpoint_descriptor(topology, "X")["delivery_metadata"]
+
+        # The same values the retry queue declares as x-dead-letter-exchange
+        # and x-dead-letter-routing-key: republishing to them puts the message
+        # back in the queue that failed it.
+        assert metadata["exchange"] == topology.resolved_retry_dead_letter_exchange
+        assert (
+            metadata["routing_key"] == topology.resolved_retry_dead_letter_routing_key
+        )
+
+    def test_never_replays_through_the_exchange_the_message_arrived_on(self) -> None:
+        topology = self.a_topology()
+
+        metadata = _endpoint_descriptor(topology, "X")["delivery_metadata"]
+
+        # Replaying to the topic exchange would fan the message out to every
+        # subscriber instead of the one that failed it.
+        assert metadata["exchange"] != topology.primary_exchange
+        assert metadata["routing_key"] != topology.primary_binding_key
+
+    def test_gives_two_workers_different_replay_targets(self) -> None:
+        customs = _endpoint_descriptor(self.a_topology(), "X")
+        shipment = _endpoint_descriptor(
+            self.a_topology(primary_queue="trade-logistics.shipment"), "X"
+        )
+
+        assert (
+            customs["delivery_metadata"]["routing_key"]
+            != shipment["delivery_metadata"]["routing_key"]
+        )
+
+    def test_lists_every_handler_that_failed(self) -> None:
+        class TwoHandlersFailedError(Exception):
+            failures: ClassVar[list[Exception]] = [
+                ValueError("first"),
+                KeyError("second"),
+            ]
+
+        details = _exception_details(TwoHandlersFailedError())
+
+        assert [item["exception_type"] for item in details] == [
+            "ValueError",
+            "KeyError",
+        ]
+        assert all(item["failed_at"] for item in details)
+        assert all("endpoint" not in item for item in details)
 
 
 class TestModuleRegistry:

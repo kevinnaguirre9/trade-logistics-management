@@ -90,12 +90,83 @@ use case ──write──▶ <schema>.outbox_messages ──dispatch-messages�
   (`--immediate-retries-number`), then through a TTL retry queue that returns
   the message to the primary queue (`--delayed-retries-number`).
 - **Error queue.** Once the delayed retries are spent the message is parked in
-  the error queue with an `exception_details` header naming the endpoint, the
-  exception and when it failed.
+  the error queue with an `exception_details` header naming the exception and
+  when it failed, and an `endpoint` header saying whose it was and how to put
+  it back. It goes there through the direct exchange as well: a poison message has
+  exactly one destination, so there is nothing to fan out to.
+
+A dead-lettered message keeps its own id, type and body, so replaying it is a
+republish rather than a reconstruction. The `endpoint` header carries where to
+republish it:
+
+```json
+{
+  "name": "customs-worker",
+  "delivery_metadata": {
+    "message_type": "trade-logistics.shipment.shipment-manifest-finalized",
+    "exchange": "trade-logistics.direct",
+    "routing_key": "trade-logistics.customs.retry"
+  }
+}
+```
+
+`name` is the endpoint that failed it — `--app-name`, the same value the retry
+path records in its `retry_endpoint` header, so one message never names its
+endpoint two different ways. The exchange and routing key are
+deliberately the **retry queue's own dead-letter pair**, not the exchange the
+message first arrived on: that pair is the way into this consumer's queue, so
+a replay service reading the error queue can republish to it and the message
+lands back where it failed instead of fanning out to every subscriber of the
+original topic.
+
+The broker therefore carries two exchanges and no more. **`trade-logistics.topic`**
+publishes integration events, where a module announces something and any number
+of consumers may care. **`trade-logistics.direct`** handles everything addressed
+at exactly one queue: a retry going back to the consumer that failed it, and a
+poison message going to the error queue.
 
 Each module owns `outbox_messages` and `inbox_messages` inside its own schema.
 The tables are declared once and resolved per worker through SQLAlchemy's
 `schema_translate_map`, so there is a single mapping and two physical tables.
+
+### How a retry finds its way back
+
+A retry must return to the queue it failed on and to nothing else. Sending it
+back to the primary **topic** exchange would hand it to every queue bound to
+that pattern, waking sibling modules with work they never attempted. So the
+return trip goes through a **direct** exchange under a key that names the
+failing queue, and the primary queue carries a second binding for it:
+
+```
+                 topic  trade-logistics.topic
+                   │ trade-logistics.shipment.#
+                   ▼
+        ┌── trade-logistics.customs ──┐          handler raises
+        │      (primary queue)        │──────────────┐
+        └─────────────────────────────┘              ▼
+                   ▲                        direct  trade-logistics.direct
+                   │                                 │ ….customs.delayed-retry
+                   │                                 ▼
+                   │                     trade-logistics.customs.delayed-retry
+                   │  bind: ….customs.retry           (TTL 10s, then expires)
+                   └──────────────◀──────────────────┘
+                     x-dead-letter-routing-key
+                        ….customs.retry
+```
+
+The direct exchange is named for its type, not for retries: both hops across it
+address exactly one queue, and anything else needing point-to-point routing
+belongs there too.
+
+Both keys are derived from the primary queue name, so two workers never share
+one — `trade-logistics.customs.retry` and `trade-logistics.shipment.retry` are
+different keys on a direct exchange. All four parts are overridable:
+`--retry-queue-dead-letter-exchange`, `--retry-queue-dead-letter-routing-key`,
+`--primary-queue-retry-binding-exchange` and `--primary-queue-retry-binding-key`.
+The dead-letter key and the second binding key must match — that is the join.
+
+Name a retry queue `…delayed-retry` rather than `…retry`, so it reads
+differently from the `….retry` key an expired message comes back under.
 
 ### Running the workers
 
@@ -113,14 +184,65 @@ docker compose exec app python worker.py handle-messages \
   --module customs_clearance \
   --primary-queue trade-logistics.customs \
   --primary-queue-binding-key 'trade-logistics.shipment.#' \
-  --retry-queue trade-logistics.customs.retry \
-  --retry-queue-binding-key trade-logistics.customs.retry \
+  --retry-queue trade-logistics.customs.delayed-retry \
+  --retry-queue-binding-key trade-logistics.customs.delayed-retry \
   --retry-queue-message-ttl 10000 \
   --immediate-retries-number 3 \
   --delayed-retries-number 3 \
-  --app-name customs-worker
+  --app-name customs-clearance
 
 docker compose exec app python worker.py handle-messages --help   # all flags
+```
+
+Every flag spelled out, for when a deployment shares nothing with the defaults:
+
+```bash
+docker compose exec app python worker.py handle-messages \
+  --module customs_clearance \
+  --limit 10 \
+  --primary-queue trade-logistics.customs \
+  --primary-queue-binding-key 'trade-logistics.shipment.#' \
+  --primary-queue-exchange trade-logistics.topic \
+  --primary-queue-exchange-type topic \
+  --primary-queue-retry-binding-exchange trade-logistics.direct \
+  --primary-queue-retry-binding-key trade-logistics.customs.retry \
+  --retry-queue trade-logistics.customs.delayed-retry \
+  --retry-queue-binding-key trade-logistics.customs.delayed-retry \
+  --retry-queue-exchange trade-logistics.direct \
+  --retry-queue-exchange-type direct \
+  --retry-queue-message-ttl 10000 \
+  --retry-queue-dead-letter-exchange trade-logistics.direct \
+  --retry-queue-dead-letter-routing-key trade-logistics.customs.retry \
+  --immediate-retries-number 3 \
+  --delayed-retries-number 3 \
+  --error-queue trade-logistics.error \
+  --error-queue-exchange trade-logistics.direct \
+  --error-queue-exchange-type direct \
+  --error-queue-routing-key trade-logistics.dead-letter \
+  --app-name customs-clearance
+```
+
+Reading it as three groups makes it shorter than it looks:
+
+| Group | Flags | What it decides |
+| ----- | ----- | --------------- |
+| Intake | `--primary-queue*` | Which queue this worker drains, and what the topic exchange routes into it |
+| Retry | `--retry-queue*`, `--*-retries-number` | Where a failure waits, for how long, and how it gets back — the two `…retry-binding…` flags and the two `…dead-letter…` flags are the two ends of one hop and must agree |
+| Failure | `--error-queue*` | Where a message lands once the delayed retries are spent |
+
+`--module` is the only required flag. Everything else falls back to the
+environment, and the four return-path flags fall back to the primary queue
+name, so the concise form above produces exactly this topology.
+
+The dispatcher takes far fewer, since publishing needs no queues:
+
+```bash
+docker compose exec app python worker.py dispatch-messages \
+  --module customs_clearance \
+  --limit 50 \
+  --primary-queue-exchange trade-logistics.topic \
+  --primary-queue-exchange-type topic \
+  --app-name customs-clearance
 ```
 
 ## Tests
